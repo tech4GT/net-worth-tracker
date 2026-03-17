@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route } from 'react-router-dom'
 import useTheme from './hooks/useTheme'
 import AppShell from './components/layout/AppShell'
 import DashboardPage from './pages/DashboardPage'
@@ -11,7 +11,7 @@ export default function App() {
   useTheme()
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<DashboardPage />} />
@@ -21,6 +21,6 @@ export default function App() {
           <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   )
 }
