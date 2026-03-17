@@ -51,6 +51,7 @@ function ExchangeRatesSection() {
   const [newCode, setNewCode] = useState('')
   const [newRate, setNewRate] = useState('')
   const [fetching, setFetching] = useState(false)
+  const [fetchError, setFetchError] = useState(false)
 
   const addRate = () => {
     const code = newCode.trim().toUpperCase()
@@ -63,10 +64,11 @@ function ExchangeRatesSection() {
 
   const handleFetchRates = async () => {
     setFetching(true)
+    setFetchError(false)
     try {
       await refreshExchangeRates()
     } catch {
-      // ignore
+      setFetchError(true)
     } finally {
       setFetching(false)
     }
@@ -82,6 +84,11 @@ function ExchangeRatesSection() {
           {fetching ? 'Fetching...' : 'Fetch Live Rates'}
         </Button>
       </div>
+      {fetchError && (
+        <p className="text-sm text-danger-500 mb-2">
+          Failed to fetch rates. Check your connection and try again.
+        </p>
+      )}
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
         1 {baseCurrency} = X foreign currency. Live rates from ECB via frankfurter.app.
       </p>

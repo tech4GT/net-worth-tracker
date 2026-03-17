@@ -17,6 +17,7 @@ export default function DashboardPage() {
   const refreshExchangeRates = useStore((s) => s.refreshExchangeRates)
 
   const [fetchingRates, setFetchingRates] = useState(false)
+  const [ratesFetchError, setRatesFetchError] = useState(false)
 
   // Show reminder if no snapshot in 30+ days
   const showReminder = !!(snapshotReminder && items.length > 0 && (() => {
@@ -32,8 +33,9 @@ export default function DashboardPage() {
   useEffect(() => {
     if (missingRates.length > 0 && !fetchingRates) {
       setFetchingRates(true)
+      setRatesFetchError(false)
       refreshExchangeRates()
-        .catch(() => {})
+        .catch(() => setRatesFetchError(true))
         .finally(() => setFetchingRates(false))
     }
   }, [missingRates.length]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -45,15 +47,18 @@ export default function DashboardPage() {
           <p className="text-sm text-warning-700 dark:text-warning-300">
             {fetchingRates
               ? 'Fetching exchange rates...'
-              : <>Missing exchange rates for: <strong>{missingRates.join(', ')}</strong>. Items in these currencies are excluded from totals.</>
+              : ratesFetchError
+                ? <>Could not fetch exchange rates. Items in <strong>{missingRates.join(', ')}</strong> are excluded from totals.</>
+                : <>Missing exchange rates for: <strong>{missingRates.join(', ')}</strong>. Items in these currencies are excluded from totals.</>
             }
           </p>
           {!fetchingRates && (
             <button
               onClick={() => {
                 setFetchingRates(true)
+                setRatesFetchError(false)
                 refreshExchangeRates()
-                  .catch(() => {})
+                  .catch(() => setRatesFetchError(true))
                   .finally(() => setFetchingRates(false))
               }}
               className="text-sm font-medium text-warning-600 dark:text-warning-400 hover:text-warning-800 dark:hover:text-warning-200 whitespace-nowrap cursor-pointer"
