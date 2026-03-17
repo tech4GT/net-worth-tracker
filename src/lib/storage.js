@@ -45,7 +45,13 @@ export const idbStorage = {
     if (value == null) {
       const lsValue = localStorage.getItem(name)
       if (lsValue != null) {
-        const parsed = JSON.parse(lsValue)
+        let parsed
+        try {
+          parsed = JSON.parse(lsValue)
+        } catch {
+          localStorage.removeItem(name)
+          return null
+        }
         // Migrate to IndexedDB
         await txn('readwrite', (store) => {
           store.put(parsed, name)

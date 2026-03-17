@@ -73,14 +73,17 @@ const useStore = create(
         const state = get()
         const cat = state.categories.find((c) => c.id === id)
         // Reassign orphaned items to a fallback category of the same type
-        const fallbackId = state.categories.find(
+        const fallback = state.categories.find(
           (c) => c.id !== id && (c.type === cat?.type || c.type === 'both') && c.isDefault
-        )?.id
+        )
+        if (!fallback) {
+          // No safe fallback — block deletion to prevent orphaned items
+          console.warn('[NWT] Cannot delete category: no default fallback category of the same type exists')
+          return
+        }
         set((s) => ({
           categories: s.categories.filter((c) => c.id !== id),
-          items: fallbackId
-            ? s.items.map((i) => (i.categoryId === id ? { ...i, categoryId: fallbackId } : i))
-            : s.items,
+          items: s.items.map((i) => (i.categoryId === id ? { ...i, categoryId: fallback.id } : i)),
         }))
       },
 
