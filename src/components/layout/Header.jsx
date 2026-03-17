@@ -7,6 +7,7 @@ export default function Header({ title, onMenuClick }) {
         <div className="flex items-center gap-3">
           <button
             onClick={onMenuClick}
+            aria-label="Open menu"
             className="lg:hidden text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 cursor-pointer"
           >
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -303,6 +303,7 @@ export default function ItemForm({ item, type, onClose }) {
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             error={errors.name}
+            maxLength={100}
           />
 
           <Select
@@ -370,6 +371,7 @@ export default function ItemForm({ item, type, onClose }) {
           value={form.name}
           onChange={(e) => setForm({ ...form, name: e.target.value })}
           error={errors.name}
+          maxLength={100}
         />
       )}
 
@@ -414,6 +416,7 @@ export default function ItemForm({ item, type, onClose }) {
         placeholder="e.g. emergency-fund, joint (comma separated)"
         value={form.tags}
         onChange={(e) => setForm({ ...form, tags: e.target.value })}
+        maxLength={200}
       />
 
       <div>
@@ -426,6 +429,7 @@ export default function ItemForm({ item, type, onClose }) {
           placeholder="Optional notes..."
           value={form.notes}
           onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          maxLength={500}
         />
       </div>
 

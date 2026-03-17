@@ -104,6 +104,7 @@ function ExchangeRatesSection() {
             />
             <button
               onClick={() => removeExchangeRate(code)}
+              aria-label={`Remove ${code} exchange rate`}
               className="text-gray-400 hover:text-danger-500 transition-colors cursor-pointer"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -119,6 +120,7 @@ function ExchangeRatesSection() {
             placeholder="EUR"
             value={newCode}
             onChange={(e) => setNewCode(e.target.value)}
+            maxLength={10}
             className="w-28"
           />
           <Input
@@ -226,6 +228,7 @@ function CategoriesSection() {
             placeholder="e.g. Side Business"
             value={newCat.name}
             onChange={(e) => setNewCat({ ...newCat, name: e.target.value })}
+            maxLength={50}
           />
           <Select
             label="Type"
