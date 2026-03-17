@@ -6,6 +6,7 @@ import AssetsPage from './pages/AssetsPage'
 import LiabilitiesPage from './pages/LiabilitiesPage'
 import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
+import ErrorBoundary from './components/ui/ErrorBoundary'
 
 export default function App() {
   useTheme()
@@ -14,11 +15,11 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/assets" element={<AssetsPage />} />
-          <Route path="/liabilities" element={<LiabilitiesPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/" element={<ErrorBoundary><DashboardPage /></ErrorBoundary>} />
+          <Route path="/assets" element={<ErrorBoundary><AssetsPage /></ErrorBoundary>} />
+          <Route path="/liabilities" element={<ErrorBoundary><LiabilitiesPage /></ErrorBoundary>} />
+          <Route path="/history" element={<ErrorBoundary><HistoryPage /></ErrorBoundary>} />
+          <Route path="/settings" element={<ErrorBoundary><SettingsPage /></ErrorBoundary>} />
         </Route>
       </Routes>
     </BrowserRouter>
