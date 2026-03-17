@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import Papa from 'papaparse'
 import useStore from '../store/store'
 import { COMMON_CURRENCIES, CHART_COLORS } from '../lib/constants'
 import Button from '../components/ui/Button'
@@ -342,37 +343,9 @@ function ImportExportSection() {
   }
 
   const parseCSV = (text) => {
-    const lines = text.split('\n').filter((l) => l.trim())
-    if (lines.length < 2) return []
-    // Parse header
-    const headers = lines[0].split(',').map((h) => h.replace(/^"|"$/g, '').trim())
-    return lines.slice(1).map((line) => {
-      // Parse CSV row respecting quoted fields
-      const values = []
-      let current = ''
-      let inQuotes = false
-      for (let i = 0; i < line.length; i++) {
-        const ch = line[i]
-        if (ch === '"') {
-          if (inQuotes && line[i + 1] === '"') {
-            current += '"'
-            i++
-          } else {
-            inQuotes = !inQuotes
-          }
-        } else if (ch === ',' && !inQuotes) {
-          values.push(current)
-          current = ''
-        } else {
-          current += ch
-        }
-      }
-      values.push(current)
-
-      const row = {}
-      headers.forEach((h, i) => { row[h] = (values[i] || '').trim() })
-      return row
-    })
+    const { data, errors } = Papa.parse(text, { header: true, skipEmptyLines: true })
+    if (errors.length > 0 && data.length === 0) throw new Error(errors[0].message)
+    return data
   }
 
   const handleImport = () => {
