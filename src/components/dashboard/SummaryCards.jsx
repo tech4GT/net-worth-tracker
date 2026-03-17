@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import useStore from '../../store/store'
 import { convertToBase, formatCurrency } from '../../lib/currency'
 
@@ -6,15 +7,18 @@ export default function SummaryCards() {
   const baseCurrency = useStore((s) => s.baseCurrency)
   const exchangeRates = useStore((s) => s.exchangeRates)
 
-  const totalAssets = items
-    .filter((i) => i.type === 'asset')
-    .reduce((sum, i) => sum + convertToBase(i.value, i.currency, baseCurrency, exchangeRates), 0)
-  const totalLiabilities = items
-    .filter((i) => i.type === 'liability')
-    .reduce((sum, i) => sum + convertToBase(i.value, i.currency, baseCurrency, exchangeRates), 0)
-
-  const assetCount = items.filter((i) => i.type === 'asset').length
-  const liabilityCount = items.filter((i) => i.type === 'liability').length
+  const { totalAssets, totalLiabilities, assetCount, liabilityCount } = useMemo(() => {
+    let totalAssets = 0
+    let totalLiabilities = 0
+    let assetCount = 0
+    let liabilityCount = 0
+    for (const i of items) {
+      const val = convertToBase(i.value, i.currency, baseCurrency, exchangeRates)
+      if (i.type === 'asset') { totalAssets += val; assetCount++ }
+      else { totalLiabilities += val; liabilityCount++ }
+    }
+    return { totalAssets, totalLiabilities, assetCount, liabilityCount }
+  }, [items, baseCurrency, exchangeRates])
 
   const cards = [
     {

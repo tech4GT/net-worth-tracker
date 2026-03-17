@@ -10,6 +10,9 @@ export default function AllocationChart({ type = 'asset' }) {
 
   const filtered = items.filter((i) => i.type === type)
 
+  // Index categories by id to avoid O(n) find per item
+  const catMap = new Map(categories.map((c) => [c.id, c]))
+
   // Group by category
   const grouped = {}
   filtered.forEach((item) => {
@@ -17,7 +20,7 @@ export default function AllocationChart({ type = 'asset' }) {
     if (grouped[item.categoryId]) {
       grouped[item.categoryId].value += val
     } else {
-      const cat = categories.find((c) => c.id === item.categoryId)
+      const cat = catMap.get(item.categoryId)
       grouped[item.categoryId] = {
         name: cat?.name || 'Other',
         value: val,

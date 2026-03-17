@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import useStore from '../../store/store'
 import { convertToBase, formatCurrency } from '../../lib/currency'
 
@@ -7,13 +8,16 @@ export default function NetWorthCard() {
   const exchangeRates = useStore((s) => s.exchangeRates)
   const snapshots = useStore((s) => s.snapshots)
 
-  const totalAssets = items
-    .filter((i) => i.type === 'asset')
-    .reduce((sum, i) => sum + convertToBase(i.value, i.currency, baseCurrency, exchangeRates), 0)
-  const totalLiabilities = items
-    .filter((i) => i.type === 'liability')
-    .reduce((sum, i) => sum + convertToBase(i.value, i.currency, baseCurrency, exchangeRates), 0)
-  const netWorth = totalAssets - totalLiabilities
+  const netWorth = useMemo(() => {
+    let assets = 0
+    let liabilities = 0
+    for (const i of items) {
+      const val = convertToBase(i.value, i.currency, baseCurrency, exchangeRates)
+      if (i.type === 'asset') assets += val
+      else liabilities += val
+    }
+    return assets - liabilities
+  }, [items, baseCurrency, exchangeRates])
 
   // Calculate change from last snapshot
   const lastSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
