@@ -89,18 +89,9 @@ const useStore = create(
 
       takeSnapshot: () => {
         const state = get()
-        const { items, categories, baseCurrency, exchangeRates, snapshots } = state
+        const { items, categories, baseCurrency, exchangeRates } = state
         const now = new Date()
         const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-
-        // Prevent duplicate snapshots for the same month
-        const existing = snapshots.find((s) => s.date === date)
-        if (existing) {
-          // Replace the existing snapshot for this month
-          set((s) => ({
-            snapshots: s.snapshots.filter((snap) => snap.id !== existing.id),
-          }))
-        }
 
         let totalAssets = 0
         let totalLiabilities = 0
@@ -139,12 +130,18 @@ const useStore = create(
           netWorth: totalAssets - totalLiabilities,
           breakdown: Object.values(categoryTotals),
           items: JSON.parse(JSON.stringify(items)),
-          createdAt: new Date().toISOString(),
+          createdAt: now.toISOString(),
         }
 
+        // Atomically replace any existing same-month snapshot and append the
+        // new one in a single set() call. Using s.snapshots (latest state)
+        // rather than the outer closure prevents a rapid double-click from
+        // producing two snapshots for the same month.
         set((s) => ({
-          snapshots: [...s.snapshots, snapshot],
-          lastSnapshotDate: date,
+          snapshots: [...s.snapshots.filter((snap) => snap.date !== date), snapshot],
+          // Store the actual creation timestamp so the 30-day reminder is
+          // based on when the snapshot was really taken, not the 1st of the month.
+          lastSnapshotDate: now.toISOString(),
         }))
       },
 

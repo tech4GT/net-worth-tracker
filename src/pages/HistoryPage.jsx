@@ -28,7 +28,10 @@ export default function HistoryPage() {
   const sorted = [...snapshots].sort((a, b) => a.date.localeCompare(b.date))
 
   const chartData = sorted.map((s) => ({
-    date: new Date(s.date).toLocaleDateString(undefined, {
+    // Append T12:00:00 so the YYYY-MM-01 string is parsed as local noon rather
+    // than UTC midnight, which would display as the previous month in timezones
+    // west of UTC.
+    date: new Date(s.date + 'T12:00:00').toLocaleDateString(undefined, {
       month: 'short',
       year: '2-digit',
     }),
@@ -127,7 +130,7 @@ export default function HistoryPage() {
               >
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {new Date(snap.date).toLocaleDateString(undefined, {
+                    {new Date(snap.date + 'T12:00:00').toLocaleDateString(undefined, {
                       month: 'long',
                       year: 'numeric',
                     })}

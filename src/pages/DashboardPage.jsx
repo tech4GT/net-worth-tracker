@@ -21,6 +21,10 @@ export default function DashboardPage() {
   // Show reminder if no snapshot in 30+ days
   const showReminder = !!(snapshotReminder && items.length > 0 && (() => {
     if (!lastSnapshotDate) return true
+    // lastSnapshotDate is now an ISO timestamp (full datetime), so Date parsing
+    // is unambiguous. Previously it stored "YYYY-MM-01" which parsed as UTC
+    // midnight and caused the reminder to fire up to 30 days early in western
+    // timezones.
     const diff = Date.now() - new Date(lastSnapshotDate).getTime()
     return diff > 30 * 24 * 60 * 60 * 1000
   })())

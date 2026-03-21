@@ -15,8 +15,10 @@ export default function NetWorthCard() {
     .reduce((sum, i) => sum + convertToBase(i.value, i.currency, baseCurrency, exchangeRates), 0)
   const netWorth = totalAssets - totalLiabilities
 
-  // Calculate change from last snapshot
-  const lastSnapshot = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null
+  // Calculate change from most recent snapshot (sort by date, not insertion order)
+  const lastSnapshot = snapshots.length > 0
+    ? [...snapshots].sort((a, b) => b.date.localeCompare(a.date))[0]
+    : null
   const change = lastSnapshot ? netWorth - lastSnapshot.netWorth : null
   const changePercent = lastSnapshot && lastSnapshot.netWorth !== 0
     ? ((netWorth - lastSnapshot.netWorth) / Math.abs(lastSnapshot.netWorth)) * 100
