@@ -46,13 +46,17 @@ export async function fetchMultipleStockPrices(tickers) {
   const results = {}
   const errors = {}
 
-  for (const ticker of tickers) {
-    try {
-      results[ticker] = await fetchStockPrice(ticker)
-    } catch (err) {
-      errors[ticker] = err.message
-    }
-  }
+  // Fetch all tickers in parallel. With 10 stocks at ~500ms each, the
+  // sequential version took 5+ seconds; parallel reduces that to ~500ms.
+  await Promise.allSettled(
+    tickers.map(async (ticker) => {
+      try {
+        results[ticker] = await fetchStockPrice(ticker)
+      } catch (err) {
+        errors[ticker] = err.message
+      }
+    })
+  )
 
   return { results, errors }
 }
