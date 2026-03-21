@@ -303,23 +303,25 @@ function ImportExportSection() {
   }
 
   const exportCSV = () => {
+    // Escape a value for a quoted CSV field: replace " with ""
+    const esc = (v) => String(v == null ? '' : v).replace(/"/g, '""')
     const headers = ['Name', 'Type', 'Category', 'Value', 'Currency', 'Tags', 'Notes', 'IsStock', 'Ticker', 'Shares', 'PricePerShare', 'Created', 'Updated']
     const rows = items.map((item) => {
       const cat = categories.find((c) => c.id === item.categoryId)
       return [
-        item.name,
-        item.type,
-        cat?.name || '',
-        item.value,
-        item.currency,
-        (item.tags || []).join(';'),
-        (item.notes || '').replace(/"/g, '""'),
-        item.isStock ? 'Yes' : 'No',
-        item.ticker || '',
-        item.shares || '',
-        item.pricePerShare || '',
-        item.createdAt,
-        item.updatedAt,
+        esc(item.name),
+        esc(item.type),
+        esc(cat?.name || ''),
+        esc(item.value),
+        esc(item.currency),
+        esc((item.tags || []).join(';')),
+        esc(item.notes || ''),
+        esc(item.isStock ? 'Yes' : 'No'),
+        esc(item.ticker || ''),
+        esc(item.shares || ''),
+        esc(item.pricePerShare || ''),
+        esc(item.createdAt),
+        esc(item.updatedAt),
       ]
     })
     const csv = [headers, ...rows].map((r) => r.map((v) => `"${v}"`).join(',')).join('\n')
@@ -409,7 +411,10 @@ function ImportExportSection() {
               createdAt: row.Created || new Date().toISOString(),
               updatedAt: row.Updated || new Date().toISOString(),
             }
-          }).filter((item) => item.name && item.value > 0)
+          // Only drop rows where name is missing or value is not a parseable
+          // number. Zero-value items (e.g. a paid-off loan) are valid and must
+          // be preserved; filtering on `value > 0` silently drops them.
+          }).filter((item) => item.name && !isNaN(Number(item.value)))
           if (items.length === 0) {
             alert('No valid items found in CSV')
             return
