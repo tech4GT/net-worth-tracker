@@ -33,13 +33,20 @@ export function formatCurrency(value, currencyCode = 'USD') {
 }
 
 export async function fetchExchangeRates(baseCurrency) {
-  const res = await fetch(
-    `https://api.frankfurter.app/latest?from=${encodeURIComponent(baseCurrency)}`
-  )
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const data = await res.json()
-  // Returns { rates: { EUR: 0.92, GBP: 0.79, ... } }
-  return data.rates || {}
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const res = await fetch(
+      `https://api.frankfurter.app/latest?from=${encodeURIComponent(baseCurrency)}`,
+      { signal: controller.signal }
+    )
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    // Returns { rates: { EUR: 0.92, GBP: 0.79, ... } }
+    return data.rates || {}
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 export function formatCompactCurrency(value, currencyCode = 'USD') {

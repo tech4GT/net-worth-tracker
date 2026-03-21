@@ -246,11 +246,21 @@ const useStore = create(
       name: 'nwt-store',
       version: SCHEMA_VERSION,
       storage: idbStorage,
-      // Don't persist transient UI state
-      partialize: (state) => {
-        const { stocksRefreshing, stockRefreshErrors, ...rest } = state
-        return rest
-      },
+      // Only persist plain data — never functions.
+      // IndexedDB uses the structured clone algorithm which cannot clone
+      // functions. Spreading ...rest would include all Zustand actions and
+      // crash every setItem call, silently losing all user data.
+      partialize: (state) => ({
+        items: state.items,
+        categories: state.categories,
+        snapshots: state.snapshots,
+        baseCurrency: state.baseCurrency,
+        exchangeRates: state.exchangeRates,
+        theme: state.theme,
+        snapshotReminder: state.snapshotReminder,
+        lastSnapshotDate: state.lastSnapshotDate,
+        stocksLastRefreshed: state.stocksLastRefreshed,
+      }),
       migrate: (persisted, version) => {
         if (version < 3) {
           const cats = persisted.categories || []
