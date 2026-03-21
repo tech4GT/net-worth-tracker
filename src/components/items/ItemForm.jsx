@@ -67,7 +67,11 @@ export default function ItemForm({ item, type, onClose }) {
       setForm((f) => ({
         ...f,
         categoryId: stockCategoryId,
-        currency: 'USD',
+        // Only default to USD for new items. When editing an existing stock
+        // that trades in another currency (e.g. a London-listed ETF in GBP),
+        // toggling the switch off and back on must not silently overwrite the
+        // item's stored currency.
+        ...(item ? {} : { currency: 'USD' }),
         ticker: '',
         shares: '',
         pricePerShare: '',
