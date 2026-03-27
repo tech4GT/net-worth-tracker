@@ -46,6 +46,8 @@ const useStore = create((set, get) => ({
         loading: false,
         hydrated: true,
       })
+      // Auto-refresh stock prices on load
+      get().refreshStockPrices()
     } catch (err) {
       set({ loading: false, error: err.message })
     }
