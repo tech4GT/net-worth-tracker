@@ -74,6 +74,42 @@ export async function queryUserData(userId) {
 }
 
 // ---------------------------------------------------------------------------
+// queryByPrefix
+// ---------------------------------------------------------------------------
+
+/**
+ * Return all items for a user whose SK begins with the given prefix.
+ * Handles DynamoDB pagination automatically.
+ */
+export async function queryByPrefix(userId, skPrefix) {
+  const client = getClient();
+  const items = [];
+  let exclusiveStartKey = undefined;
+
+  do {
+    const response = await client.send(
+      new QueryCommand({
+        TableName: tableName(),
+        KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+        ExpressionAttributeValues: {
+          ':pk': `USER#${userId}`,
+          ':prefix': skPrefix,
+        },
+        ...(exclusiveStartKey && { ExclusiveStartKey: exclusiveStartKey }),
+      })
+    );
+
+    if (response.Items) {
+      items.push(...response.Items);
+    }
+
+    exclusiveStartKey = response.LastEvaluatedKey;
+  } while (exclusiveStartKey);
+
+  return items;
+}
+
+// ---------------------------------------------------------------------------
 // getItem
 // ---------------------------------------------------------------------------
 

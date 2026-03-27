@@ -30,6 +30,7 @@ export default function HistoryPage() {
   const chartData = sorted.map((s) => ({
     date: new Date(s.date).toLocaleDateString(undefined, {
       month: 'short',
+      day: 'numeric',
       year: '2-digit',
     }),
     netWorth: s.netWorth,
@@ -127,9 +128,12 @@ export default function HistoryPage() {
               >
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                    {new Date(snap.date).toLocaleDateString(undefined, {
-                      month: 'long',
+                    {new Date(snap.date).toLocaleString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
                       year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
                     })}
                   </p>
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">

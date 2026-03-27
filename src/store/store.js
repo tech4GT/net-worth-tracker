@@ -261,10 +261,7 @@ const useStore = create((set, get) => ({
     try {
       const snapshot = await api.post('/api/snapshots')
       set((s) => ({
-        snapshots: [
-          ...s.snapshots.filter((snap) => snap.date !== snapshot.date),
-          snapshot,
-        ],
+        snapshots: [...s.snapshots, snapshot],
         lastSnapshotDate: snapshot.date,
       }))
       track('snapshot_take')
@@ -286,7 +283,7 @@ const useStore = create((set, get) => ({
       snapshots: s.snapshots.filter((snap) => snap.date !== date),
     }))
     try {
-      await api.delete(`/api/snapshots/${date}`)
+      await api.delete(`/api/snapshots/${encodeURIComponent(date)}`)
       track('snapshot_delete')
     } catch (err) {
       // Rollback

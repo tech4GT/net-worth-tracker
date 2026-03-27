@@ -398,11 +398,19 @@ function convertToBase(value, fromCurrency, baseCurrency, exchangeRates) {
   return value / rate;
 }
 
-function currentMonthDate() {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-  return `${year}-${month}-01`;
+function snapshotTimestamp() {
+  return new Date().toISOString();
+}
+
+function monthPrefix(isoTimestamp) {
+  return isoTimestamp.slice(0, 7); // "YYYY-MM"
+}
+
+function dbQueryByPrefix(skPrefix) {
+  const partition = userPartition();
+  return Object.entries(partition)
+    .filter(([sk]) => sk.startsWith(skPrefix))
+    .map(([sk, data]) => ({ PK: `USER#${USER_ID}`, SK: sk, ...data }));
 }
 
 // ---------------------------------------------------------------------------
@@ -817,7 +825,15 @@ function handleCreateSnapshot() {
 
   const netWorth = totalAssets - totalLiabilities;
   const breakdown = Object.values(breakdownMap);
-  const date = currentMonthDate();
+  const date = snapshotTimestamp();
+
+  // Enforce 10-per-month limit
+  const prefix = monthPrefix(date);
+  const existingSnaps = dbQueryByPrefix(`SNAP#${prefix}`);
+  const snapCount = existingSnaps.filter((r) => !r.SK.startsWith('SNAPDATA#')).length;
+  if (snapCount >= 10) {
+    return { status: 429, body: { error: 'Monthly snapshot limit reached (10 per month)' } };
+  }
 
   const summary = {
     date,
@@ -848,7 +864,7 @@ function handleCreateSnapshot() {
 function handleGetSnapshotItems(pathname) {
   // /api/snapshots/{date}/items
   const segments = pathname.split('/');
-  const date = segments[3];
+  const date = segments[3] ? decodeURIComponent(segments[3]) : null;
   if (!date) {
     return { status: 400, body: { error: 'Missing date in path' } };
   }
@@ -862,7 +878,7 @@ function handleGetSnapshotItems(pathname) {
 // DELETE /api/snapshots/:date
 function handleDeleteSnapshot(pathname) {
   const segments = pathname.split('/');
-  const date = segments[3];
+  const date = segments[3] ? decodeURIComponent(segments[3]) : null;
   if (!date) {
     return { status: 400, body: { error: 'Missing date in path' } };
   }

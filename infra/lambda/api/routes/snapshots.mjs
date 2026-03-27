@@ -6,7 +6,7 @@
  * DELETE /api/snapshots/{date}       — delete a snapshot and its item data
  */
 
-import { getItem, putItem, updateItem, queryUserData, deleteItem } from '../lib/db.mjs';
+import { getItem, putItem, updateItem, queryUserData, deleteItem, queryByPrefix } from '../lib/db.mjs';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
@@ -32,20 +32,24 @@ function convertToBase(value, fromCurrency, baseCurrency, exchangeRates) {
 }
 
 /**
- * Get the first day of the current month as YYYY-MM-01.
+ * Return a full ISO timestamp for the current moment, e.g. "2026-03-27T17:30:00.000Z".
  */
-function currentMonthDate() {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = String(now.getUTCMonth() + 1).padStart(2, '0');
-  return `${year}-${month}-01`;
+function snapshotTimestamp() {
+  return new Date().toISOString();
+}
+
+/**
+ * Return the YYYY-MM prefix for a given ISO timestamp.
+ */
+function monthPrefix(isoTimestamp) {
+  return isoTimestamp.slice(0, 7); // "2026-03"
 }
 
 function extractDateFromPath(rawPath) {
   // /api/snapshots/{date}/items → segments[3] = date
   // /api/snapshots/{date}       → segments[3] = date
   const segments = rawPath.split('/');
-  return segments[3];
+  return segments[3] ? decodeURIComponent(segments[3]) : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -118,10 +122,21 @@ export async function handleCreateSnapshot(event, userId) {
     const netWorth = totalAssets - totalLiabilities;
     const breakdown = Object.values(breakdownMap);
 
-    // 4. Date = current month's first day
-    const date = currentMonthDate();
+    // 4. Date = full ISO timestamp; enforce 10-per-month limit
+    const date = snapshotTimestamp();
+    const prefix = monthPrefix(date); // "YYYY-MM"
+    const existingSnaps = await queryByPrefix(userId, `SNAP#${prefix}`);
+    // Filter out SNAPDATA# entries that also match the prefix
+    const snapCount = existingSnaps.filter((r) => !r.SK.startsWith('SNAPDATA#')).length;
+    if (snapCount >= 10) {
+      return {
+        statusCode: 429,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'Monthly snapshot limit reached (10 per month)' }),
+      };
+    }
 
-    // 5. Write SNAP#{date} summary (upsert)
+    // 5. Write SNAP#{date} summary
     const summary = {
       date,
       totalAssets,
