@@ -104,6 +104,7 @@ export class NwtStack extends cdk.Stack {
           email: cognito.ProviderAttribute.GOOGLE_EMAIL,
           givenName: cognito.ProviderAttribute.GOOGLE_GIVEN_NAME,
           familyName: cognito.ProviderAttribute.GOOGLE_FAMILY_NAME,
+          profilePicture: cognito.ProviderAttribute.GOOGLE_PICTURE,
         },
       }
     );
