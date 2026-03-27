@@ -105,7 +105,7 @@ export async function parseStatementWithAI(statementText, categories) {
 
   try {
     const command = new InvokeModelCommand({
-      modelId: 'anthropic.claude-haiku-4-5-20251001',
+      modelId: 'anthropic.claude-haiku-4-5-20251001-v1:0',
       contentType: 'application/json',
       accept: 'application/json',
       body: JSON.stringify(requestBody),
