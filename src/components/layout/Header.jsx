@@ -50,9 +50,18 @@ export default function Header({ title, onMenuClick }) {
                 <span className="hidden sm:block text-sm text-gray-700 dark:text-gray-300 truncate max-w-[140px]">
                   {displayName}
                 </span>
-                <span className="w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-medium shrink-0">
-                  {initial}
-                </span>
+                {user?.picture ? (
+                  <img
+                    src={user.picture}
+                    alt={displayName}
+                    className="w-8 h-8 rounded-full shrink-0 object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <span className="w-8 h-8 rounded-full bg-primary-600 text-white flex items-center justify-center text-sm font-medium shrink-0">
+                    {initial}
+                  </span>
+                )}
               </button>
               {menuOpen && (
                 <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-40">

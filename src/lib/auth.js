@@ -11,7 +11,7 @@ const REDIRECT_URI = import.meta.env.VITE_REDIRECT_URI
 
 export const DEV_MODE = !COGNITO_DOMAIN
 
-const DEV_USER = { sub: 'dev-user-1', email: 'dev@localhost', name: 'Dev User' }
+const DEV_USER = { sub: 'dev-user-1', email: 'dev@localhost', name: 'Dev User', picture: null }
 
 // ---------------------------------------------------------------------------
 // Token storage (memory-only for access/id, sessionStorage for refresh)
@@ -78,6 +78,7 @@ function extractUser(idTokenStr) {
     sub: payload.sub,
     email: payload.email,
     name: payload.name || payload.email,
+    picture: payload.picture || null,
   }
 }
 
