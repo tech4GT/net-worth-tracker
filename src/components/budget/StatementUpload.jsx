@@ -3,16 +3,13 @@ import useStore from '../../store/store'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import pdfjsWorker from 'pdfjs-dist/legacy/build/pdf.worker.mjs?url'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
 
 async function extractPdfText(file) {
-
   const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({
-    data: arrayBuffer,
-    useWorkerFetch: false,
-    isEvalSupported: false,
-    useSystemFonts: true,
-  }).promise
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
   const pages = []
 
   for (let i = 1; i <= pdf.numPages; i++) {
