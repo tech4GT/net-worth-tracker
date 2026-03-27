@@ -1,298 +1,444 @@
 import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import { DEFAULT_CATEGORIES, SCHEMA_VERSION } from '../lib/constants'
+import { DEFAULT_CATEGORIES } from '../lib/constants'
 import { convertToBase, fetchExchangeRates } from '../lib/currency'
 import { fetchMultipleStockPrices } from '../lib/stocks'
-import { idbStorage } from '../lib/storage'
+import { api } from '../lib/api'
+import { track } from '../lib/telemetry'
+import { toastSuccess, toastError } from '../components/ui/Toast'
 
-const useStore = create(
-  persist(
-    (set, get) => ({
-      // --- Items ---
-      items: [],
+const useStore = create((set, get) => ({
+  // --- Data (loaded from API) ---
+  items: [],
+  categories: DEFAULT_CATEGORIES,
+  snapshots: [],
+  baseCurrency: 'USD',
+  exchangeRates: {},
+  theme: 'system',
+  snapshotReminder: true,
+  lastSnapshotDate: null,
+  stocksLastRefreshed: null,
 
-      addItem: (item) =>
-        set((state) => ({
-          items: [
-            ...state.items,
-            {
-              ...item,
-              id: crypto.randomUUID(),
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-          ],
-        })),
+  // --- UI state ---
+  loading: true,
+  error: null,
+  hydrated: false,
+  pendingIds: new Set(),
 
-      updateItem: (id, updates) =>
-        set((state) => ({
-          items: state.items.map((i) =>
-            i.id === id
-              ? { ...i, ...updates, updatedAt: new Date().toISOString() }
-              : i
-          ),
-        })),
+  // --- Transient ---
+  stocksRefreshing: false,
+  stockRefreshErrors: {},
 
-      deleteItem: (id) =>
-        set((state) => ({
-          items: state.items.filter((i) => i.id !== id),
-        })),
-
-      addItems: (newItems) =>
-        set((state) => ({
-          items: [
-            ...state.items,
-            ...newItems.map((item) => ({
-              ...item,
-              id: crypto.randomUUID(),
-              createdAt: item.createdAt || new Date().toISOString(),
-              updatedAt: item.updatedAt || new Date().toISOString(),
-            })),
-          ],
-        })),
-
-      // --- Categories ---
-      categories: DEFAULT_CATEGORIES,
-
-      addCategory: (category) =>
-        set((state) => ({
-          categories: [
-            ...state.categories,
-            { ...category, id: crypto.randomUUID(), isDefault: false },
-          ],
-        })),
-
-      updateCategory: (id, updates) =>
-        set((state) => ({
-          categories: state.categories.map((c) =>
-            c.id === id ? { ...c, ...updates } : c
-          ),
-        })),
-
-      deleteCategory: (id) => {
-        const state = get()
-        const cat = state.categories.find((c) => c.id === id)
-        // Reassign orphaned items to a fallback category of the same type
-        const fallbackId = state.categories.find(
-          (c) => c.id !== id && (c.type === cat?.type || c.type === 'both') && c.isDefault
-        )?.id
-        set((s) => ({
-          categories: s.categories.filter((c) => c.id !== id),
-          items: fallbackId
-            ? s.items.map((i) => (i.categoryId === id ? { ...i, categoryId: fallbackId } : i))
-            : s.items,
-        }))
-      },
-
-      // --- Snapshots ---
-      snapshots: [],
-
-      takeSnapshot: () => {
-        const state = get()
-        const { items, categories, baseCurrency, exchangeRates, snapshots } = state
-        const now = new Date()
-        const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
-
-        // Prevent duplicate snapshots for the same month
-        const existing = snapshots.find((s) => s.date === date)
-        if (existing) {
-          // Replace the existing snapshot for this month
-          set((s) => ({
-            snapshots: s.snapshots.filter((snap) => snap.id !== existing.id),
-          }))
-        }
-
-        let totalAssets = 0
-        let totalLiabilities = 0
-        const categoryTotals = {}
-
-        items.forEach((item) => {
-          const converted = convertToBase(
-            item.value,
-            item.currency,
-            baseCurrency,
-            exchangeRates
-          )
-          if (item.type === 'asset') {
-            totalAssets += converted
-          } else {
-            totalLiabilities += converted
-          }
-          if (!categoryTotals[item.categoryId]) {
-            const cat = categories.find((c) => c.id === item.categoryId)
-            categoryTotals[item.categoryId] = {
-              categoryId: item.categoryId,
-              name: cat?.name || 'Unknown',
-              total: 0,
-              type: item.type,
-            }
-          }
-          categoryTotals[item.categoryId].total += converted
-        })
-
-        const snapshot = {
-          id: crypto.randomUUID(),
-          date,
-          baseCurrency,
-          totalAssets,
-          totalLiabilities,
-          netWorth: totalAssets - totalLiabilities,
-          breakdown: Object.values(categoryTotals),
-          items: JSON.parse(JSON.stringify(items)),
-          createdAt: new Date().toISOString(),
-        }
-
-        set((s) => ({
-          snapshots: [...s.snapshots, snapshot],
-          lastSnapshotDate: date,
-        }))
-      },
-
-      deleteSnapshot: (id) =>
-        set((state) => ({
-          snapshots: state.snapshots.filter((s) => s.id !== id),
-        })),
-
-      // --- Currency ---
-      baseCurrency: 'USD',
-      exchangeRates: {},
-
-      setBaseCurrency: (code) => set({ baseCurrency: code }),
-
-      setExchangeRate: (code, rate) =>
-        set((state) => ({
-          exchangeRates: { ...state.exchangeRates, [code]: rate },
-        })),
-
-      removeExchangeRate: (code) =>
-        set((state) => {
-          const { [code]: _, ...rest } = state.exchangeRates
-          return { exchangeRates: rest }
-        }),
-
-      refreshExchangeRates: async () => {
-        const { baseCurrency, exchangeRates } = get()
-        const fetched = await fetchExchangeRates(baseCurrency)
-        // Merge fetched rates into existing (preserves manually set rates for crypto etc.)
-        set({
-          exchangeRates: { ...exchangeRates, ...fetched },
-        })
-      },
-
-      // --- Stocks ---
-      stocksRefreshing: false,
-      stocksLastRefreshed: null,
-      stockRefreshErrors: {},
-
-      refreshStockPrices: async () => {
-        const state = get()
-        if (state.stocksRefreshing) return // guard against concurrent calls
-
-        const stockItems = state.items.filter((i) => i.isStock && i.ticker)
-        if (stockItems.length === 0) return
-
-        const tickers = [...new Set(stockItems.map((i) => i.ticker.toUpperCase()))]
-
-        set({ stocksRefreshing: true, stockRefreshErrors: {} })
-
-        try {
-          const { results, errors } = await fetchMultipleStockPrices(tickers)
-
-          set((state) => ({
-            items: state.items.map((item) => {
-              if (!item.isStock || !item.ticker) return item
-              const quote = results[item.ticker.toUpperCase()]
-              if (!quote) return item
-              return {
-                ...item,
-                pricePerShare: quote.price,
-                value: item.shares * quote.price,
-                currency: quote.currency || item.currency,
-                lastPriceUpdate: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              }
-            }),
-            stocksRefreshing: false,
-            stocksLastRefreshed: new Date().toISOString(),
-            stockRefreshErrors: errors,
-          }))
-        } catch (err) {
-          set({ stocksRefreshing: false, stockRefreshErrors: { _general: err.message } })
-          throw err
-        }
-      },
-
-      // --- Settings ---
-      theme: 'system',
-      setTheme: (theme) => set({ theme }),
-      snapshotReminder: true,
-      lastSnapshotDate: null,
-
-      // --- Import/Export ---
-      importData: (data) => {
-        set({
-          items: data.items || [],
-          categories: data.categories || DEFAULT_CATEGORIES,
-          snapshots: data.snapshots || [],
-          baseCurrency: data.baseCurrency || 'USD',
-          exchangeRates: data.exchangeRates || {},
-          theme: data.theme || 'system',
-          lastSnapshotDate: data.lastSnapshotDate || null,
-          snapshotReminder: data.snapshotReminder ?? true,
-        })
-      },
-    }),
-    {
-      name: 'nwt-store',
-      version: SCHEMA_VERSION,
-      storage: idbStorage,
-      // Don't persist transient UI state
-      partialize: (state) => {
-        const { stocksRefreshing, stockRefreshErrors, ...rest } = state
-        return rest
-      },
-      migrate: (persisted, version) => {
-        if (version < 3) {
-          const cats = persisted.categories || []
-          if (!cats.find((c) => c.id === 'cat-stocks')) {
-            cats.push({ id: 'cat-stocks', name: 'Stocks', type: 'asset', icon: 'chart-bar', color: '#3b82f6', isDefault: true })
-            persisted.categories = cats
-          }
-          persisted.items = (persisted.items || []).map((item) => {
-            if (item.isStock && item.ticker) {
-              return { ...item, categoryId: 'cat-stocks' }
-            }
-            return item
-          })
-        }
-        return persisted
-      },
-      onRehydrateStorage: () => (state) => {
-        if (!state) return
-        const cats = state.categories
-        const hasCatStocks = cats.some((c) => c.id === 'cat-stocks')
-        // Ensure cat-stocks exists
-        if (!hasCatStocks) {
-          state.categories = [...cats, { id: 'cat-stocks', name: 'Stocks', type: 'asset', icon: 'chart-bar', color: '#3b82f6', isDefault: true }]
-        }
-        // Fix any stock items with wrong/missing category
-        const needsFix = state.items.some((i) => i.isStock && i.categoryId !== 'cat-stocks' && i.categoryId !== 'cat-retirement')
-        if (needsFix) {
-          useStore.setState({
-            categories: hasCatStocks ? cats : [...cats, { id: 'cat-stocks', name: 'Stocks', type: 'asset', icon: 'chart-bar', color: '#3b82f6', isDefault: true }],
-            items: state.items.map((item) => {
-              if (item.isStock && item.ticker && item.categoryId !== 'cat-stocks') {
-                return { ...item, categoryId: 'cat-stocks' }
-              }
-              return item
-            }),
-          })
-        } else if (!hasCatStocks) {
-          useStore.setState({ categories: [...cats, { id: 'cat-stocks', name: 'Stocks', type: 'asset', icon: 'chart-bar', color: '#3b82f6', isDefault: true }] })
-        }
-      },
+  // --- Initial load ---
+  loadUserData: async () => {
+    set({ loading: true, error: null })
+    try {
+      const data = await api.get('/api/state')
+      set({
+        items: data.items,
+        categories: data.categories,
+        snapshots: data.snapshots,
+        baseCurrency: data.settings.baseCurrency || 'USD',
+        exchangeRates: data.settings.exchangeRates || {},
+        theme: data.settings.theme || 'system',
+        snapshotReminder: data.settings.snapshotReminder ?? true,
+        lastSnapshotDate: data.settings.lastSnapshotDate,
+        stocksLastRefreshed: data.settings.stocksLastRefreshed,
+        loading: false,
+        hydrated: true,
+      })
+    } catch (err) {
+      set({ loading: false, error: err.message })
     }
-  )
-)
+  },
+
+  // --- Items ---
+  addItem: async (item) => {
+    const tempId = crypto.randomUUID()
+    const newItem = {
+      ...item,
+      id: tempId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+    set((s) => ({
+      items: [...s.items, newItem],
+      pendingIds: new Set([...s.pendingIds, tempId]),
+    }))
+    try {
+      const saved = await api.post('/api/items', item)
+      set((s) => ({
+        items: s.items.map((i) => (i.id === tempId ? saved : i)),
+        pendingIds: new Set([...s.pendingIds].filter((id) => id !== tempId)),
+      }))
+      track('item_add', { category: item.type })
+      return saved
+    } catch (err) {
+      set((s) => ({
+        items: s.items.filter((i) => i.id !== tempId),
+        pendingIds: new Set([...s.pendingIds].filter((id) => id !== tempId)),
+      }))
+      toastError('Failed to add item')
+      throw err
+    }
+  },
+
+  updateItem: async (id, updates) => {
+    const state = get()
+    const original = state.items.find((i) => i.id === id)
+    if (!original) return
+
+    // Optimistic local update
+    set((s) => ({
+      items: s.items.map((i) =>
+        i.id === id
+          ? { ...i, ...updates, updatedAt: new Date().toISOString() }
+          : i
+      ),
+    }))
+    try {
+      const saved = await api.put(`/api/items/${id}`, updates)
+      set((s) => ({
+        items: s.items.map((i) => (i.id === id ? saved : i)),
+      }))
+      return saved
+    } catch (err) {
+      // Rollback
+      set((s) => ({
+        items: s.items.map((i) => (i.id === id ? original : i)),
+      }))
+      toastError('Failed to update item')
+      throw err
+    }
+  },
+
+  deleteItem: async (id) => {
+    const state = get()
+    const original = state.items.find((i) => i.id === id)
+    if (!original) return
+
+    // Optimistic removal
+    set((s) => ({
+      items: s.items.filter((i) => i.id !== id),
+    }))
+    try {
+      await api.delete(`/api/items/${id}`)
+      track('item_delete')
+    } catch (err) {
+      // Rollback
+      set((s) => ({
+        items: [...s.items, original],
+      }))
+      toastError('Failed to delete item')
+      throw err
+    }
+  },
+
+  addItems: async (newItems) => {
+    const tempEntries = newItems.map((item) => ({
+      ...item,
+      id: crypto.randomUUID(),
+      createdAt: item.createdAt || new Date().toISOString(),
+      updatedAt: item.updatedAt || new Date().toISOString(),
+    }))
+    const tempIds = tempEntries.map((e) => e.id)
+
+    // Optimistic add
+    set((s) => ({
+      items: [...s.items, ...tempEntries],
+      pendingIds: new Set([...s.pendingIds, ...tempIds]),
+    }))
+    try {
+      const saved = await api.post('/api/items/batch', newItems)
+      // Replace all temp entries with server-returned items
+      const tempIdSet = new Set(tempIds)
+      set((s) => ({
+        items: [
+          ...s.items.filter((i) => !tempIdSet.has(i.id)),
+          ...saved,
+        ],
+        pendingIds: new Set(
+          [...s.pendingIds].filter((id) => !tempIdSet.has(id))
+        ),
+      }))
+      return saved
+    } catch (err) {
+      // Rollback: remove all temp items
+      const tempIdSet = new Set(tempIds)
+      set((s) => ({
+        items: s.items.filter((i) => !tempIdSet.has(i.id)),
+        pendingIds: new Set(
+          [...s.pendingIds].filter((id) => !tempIdSet.has(id))
+        ),
+      }))
+      toastError('Failed to add items')
+      throw err
+    }
+  },
+
+  // --- Categories ---
+  addCategory: async (category) => {
+    const tempId = crypto.randomUUID()
+    const newCat = { ...category, id: tempId, isDefault: false }
+
+    set((s) => ({
+      categories: [...s.categories, newCat],
+    }))
+    try {
+      const saved = await api.post('/api/categories', category)
+      set((s) => ({
+        categories: s.categories.map((c) => (c.id === tempId ? saved : c)),
+      }))
+      return saved
+    } catch (err) {
+      set((s) => ({
+        categories: s.categories.filter((c) => c.id !== tempId),
+      }))
+      toastError('Failed to add category')
+      throw err
+    }
+  },
+
+  updateCategory: async (id, updates) => {
+    const state = get()
+    const original = state.categories.find((c) => c.id === id)
+    if (!original) return
+
+    set((s) => ({
+      categories: s.categories.map((c) =>
+        c.id === id ? { ...c, ...updates } : c
+      ),
+    }))
+    try {
+      const saved = await api.put(`/api/categories/${id}`, updates)
+      set((s) => ({
+        categories: s.categories.map((c) => (c.id === id ? saved : c)),
+      }))
+      return saved
+    } catch (err) {
+      set((s) => ({
+        categories: s.categories.map((c) => (c.id === id ? original : c)),
+      }))
+      toastError('Failed to update category')
+      throw err
+    }
+  },
+
+  deleteCategory: async (id) => {
+    const state = get()
+    const cat = state.categories.find((c) => c.id === id)
+    if (!cat) return
+
+    // Determine fallback category (same referential integrity logic as before)
+    const fallbackId = state.categories.find(
+      (c) =>
+        c.id !== id &&
+        (c.type === cat.type || c.type === 'both') &&
+        c.isDefault
+    )?.id
+
+    try {
+      await api.delete(`/api/categories/${id}`)
+      // On success: remove category locally, reassign affected items
+      set((s) => ({
+        categories: s.categories.filter((c) => c.id !== id),
+        items: fallbackId
+          ? s.items.map((i) =>
+              i.categoryId === id ? { ...i, categoryId: fallbackId } : i
+            )
+          : s.items,
+      }))
+      track('category_delete')
+    } catch (err) {
+      toastError('Failed to delete category')
+      throw err
+    }
+  },
+
+  // --- Snapshots ---
+  takeSnapshot: async () => {
+    try {
+      const snapshot = await api.post('/api/snapshots')
+      set((s) => ({
+        snapshots: [
+          ...s.snapshots.filter((snap) => snap.date !== snapshot.date),
+          snapshot,
+        ],
+        lastSnapshotDate: snapshot.date,
+      }))
+      track('snapshot_take')
+      toastSuccess('Snapshot created')
+      return snapshot
+    } catch (err) {
+      toastError('Failed to create snapshot')
+      throw err
+    }
+  },
+
+  deleteSnapshot: async (id) => {
+    const state = get()
+    const snapshot = state.snapshots.find((s) => s.id === id)
+    if (!snapshot) return
+
+    // Optimistic removal
+    set((s) => ({
+      snapshots: s.snapshots.filter((snap) => snap.id !== id),
+    }))
+    try {
+      await api.delete(`/api/snapshots/${snapshot.date}`)
+      track('snapshot_delete')
+    } catch (err) {
+      // Rollback
+      set((s) => ({
+        snapshots: [...s.snapshots, snapshot],
+      }))
+      toastError('Failed to delete snapshot')
+      throw err
+    }
+  },
+
+  // --- Currency ---
+  setBaseCurrency: async (code) => {
+    const prev = get().baseCurrency
+    set({ baseCurrency: code })
+    try {
+      await api.put('/api/settings', { baseCurrency: code })
+    } catch (err) {
+      set({ baseCurrency: prev })
+      toastError('Failed to update currency')
+      throw err
+    }
+  },
+
+  setExchangeRate: async (code, rate) => {
+    const prev = get().exchangeRates
+    set((s) => ({
+      exchangeRates: { ...s.exchangeRates, [code]: rate },
+    }))
+    try {
+      await api.put('/api/settings', {
+        exchangeRates: { ...prev, [code]: rate },
+      })
+    } catch (err) {
+      set({ exchangeRates: prev })
+      toastError('Failed to update exchange rate')
+      throw err
+    }
+  },
+
+  removeExchangeRate: async (code) => {
+    const prev = get().exchangeRates
+    const { [code]: _, ...rest } = prev
+    set({ exchangeRates: rest })
+    try {
+      await api.put('/api/settings', { exchangeRates: rest })
+    } catch (err) {
+      set({ exchangeRates: prev })
+      toastError('Failed to remove exchange rate')
+      throw err
+    }
+  },
+
+  refreshExchangeRates: async () => {
+    const { baseCurrency, exchangeRates } = get()
+    const fetched = await fetchExchangeRates(baseCurrency)
+    const merged = { ...exchangeRates, ...fetched }
+    set({ exchangeRates: merged })
+    try {
+      await api.put('/api/settings', { exchangeRates: merged })
+      track('rates_refresh')
+    } catch (err) {
+      // Rates are still valid locally even if persist fails
+      toastError('Rates refreshed locally but failed to save')
+    }
+  },
+
+  // --- Stocks ---
+  refreshStockPrices: async () => {
+    const state = get()
+    if (state.stocksRefreshing) return
+
+    const stockItems = state.items.filter((i) => i.isStock && i.ticker)
+    if (stockItems.length === 0) return
+
+    const tickers = [
+      ...new Set(stockItems.map((i) => i.ticker.toUpperCase())),
+    ]
+
+    set({ stocksRefreshing: true, stockRefreshErrors: {} })
+
+    try {
+      const { results, errors } = await fetchMultipleStockPrices(tickers)
+
+      const updatedItems = state.items.map((item) => {
+        if (!item.isStock || !item.ticker) return item
+        const quote = results[item.ticker.toUpperCase()]
+        if (!quote) return item
+        return {
+          ...item,
+          pricePerShare: quote.price,
+          value: item.shares * quote.price,
+          currency: quote.currency || item.currency,
+          lastPriceUpdate: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        }
+      })
+
+      const now = new Date().toISOString()
+      set({
+        items: updatedItems,
+        stocksRefreshing: false,
+        stocksLastRefreshed: now,
+        stockRefreshErrors: errors,
+      })
+
+      // Persist updated stock items to backend
+      const changedItems = updatedItems.filter(
+        (item) => item.isStock && item.ticker && results[item.ticker.toUpperCase()]
+      )
+      if (changedItems.length > 0) {
+        try {
+          await api.put('/api/items/batch', changedItems)
+          await api.put('/api/settings', { stocksLastRefreshed: now })
+        } catch {
+          // Stock prices updated locally; backend sync failed silently
+        }
+      }
+      track('stocks_refresh')
+    } catch (err) {
+      set({
+        stocksRefreshing: false,
+        stockRefreshErrors: { _general: err.message },
+      })
+      throw err
+    }
+  },
+
+  // --- Settings ---
+  setTheme: async (theme) => {
+    const prev = get().theme
+    set({ theme })
+    try {
+      await api.put('/api/settings', { theme })
+    } catch (err) {
+      set({ theme: prev })
+      toastError('Failed to update theme')
+      throw err
+    }
+  },
+
+  // --- Import/Export ---
+  importData: async (data) => {
+    try {
+      const result = await api.post('/api/import', data)
+      // Re-fetch all state from server
+      await get().loadUserData()
+      track('data_import')
+      toastSuccess(`Imported ${result.imported.items} items`)
+    } catch (err) {
+      toastError('Import failed')
+      throw err
+    }
+  },
+}))
 
 export default useStore

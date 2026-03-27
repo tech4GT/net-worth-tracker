@@ -5,15 +5,54 @@ import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import Select from '../components/ui/Select'
 import Modal from '../components/ui/Modal'
+import { useAuth } from '../contexts/AuthContext'
+import { track } from '../lib/telemetry'
 
 export default function SettingsPage() {
   return (
     <div className="space-y-8 max-w-3xl">
+      <AccountSection />
       <CurrencySection />
       <ExchangeRatesSection />
       <CategoriesSection />
       <ImportExportSection />
     </div>
+  )
+}
+
+function AccountSection() {
+  const { user, logout } = useAuth()
+
+  return (
+    <section>
+      <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+        Account
+      </h2>
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="w-10 h-10 rounded-full bg-primary-600 text-white flex items-center justify-center text-base font-medium shrink-0">
+              {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}
+            </span>
+            <div>
+              {user?.name && (
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                  {user.name}
+                </p>
+              )}
+              {user?.email && (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {user.email}
+                </p>
+              )}
+            </div>
+          </div>
+          <Button variant="secondary" size="sm" onClick={logout}>
+            Sign out
+          </Button>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -300,6 +339,7 @@ function ImportExportSection() {
     a.download = `net-worth-backup-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
+    track('data_export', { format: 'json' })
   }
 
   const exportCSV = () => {
@@ -330,6 +370,7 @@ function ImportExportSection() {
     a.download = `net-worth-items-${new Date().toISOString().slice(0, 10)}.csv`
     a.click()
     URL.revokeObjectURL(url)
+    track('data_export', { format: 'csv' })
   }
 
   const handleFileSelect = (e, mode) => {

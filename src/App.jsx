@@ -1,5 +1,8 @@
 import { HashRouter, Routes, Route } from 'react-router-dom'
 import useTheme from './hooks/useTheme'
+import { AuthProvider } from './contexts/AuthContext'
+import LoginPage from './components/auth/LoginPage'
+import ProtectedRoute from './components/auth/ProtectedRoute'
 import AppShell from './components/layout/AppShell'
 import DashboardPage from './pages/DashboardPage'
 import AssetsPage from './pages/AssetsPage'
@@ -11,16 +14,25 @@ export default function App() {
   useTheme()
 
   return (
-    <HashRouter>
-      <Routes>
-        <Route element={<AppShell />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/assets" element={<AssetsPage />} />
-          <Route path="/liabilities" element={<LiabilitiesPage />} />
-          <Route path="/history" element={<HistoryPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-        </Route>
-      </Routes>
-    </HashRouter>
+    <AuthProvider>
+      <HashRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            element={
+              <ProtectedRoute>
+                <AppShell />
+              </ProtectedRoute>
+            }
+          >
+            <Route path="/" element={<DashboardPage />} />
+            <Route path="/assets" element={<AssetsPage />} />
+            <Route path="/liabilities" element={<LiabilitiesPage />} />
+            <Route path="/history" element={<HistoryPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+          </Route>
+        </Routes>
+      </HashRouter>
+    </AuthProvider>
   )
 }

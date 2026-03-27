@@ -1,5 +1,7 @@
+const API_BASE = import.meta.env.VITE_API_URL || ''
+
 export async function fetchStockPrice(ticker) {
-  const url = `/api/yahoo/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`
+  const url = `${API_BASE}/api/yahoo/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
@@ -28,7 +30,7 @@ export async function fetchStockPrice(ticker) {
 
 export async function searchStocks(query) {
   if (!query || query.trim().length < 1) return []
-  const url = `/api/yahoo/v1/finance/search?q=${encodeURIComponent(query.trim())}&quotesCount=12&newsCount=0&listsCount=0`
+  const url = `${API_BASE}/api/yahoo/v1/finance/search?q=${encodeURIComponent(query.trim())}&quotesCount=12&newsCount=0&listsCount=0`
   const res = await fetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const data = await res.json()
