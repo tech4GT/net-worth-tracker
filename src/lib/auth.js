@@ -77,7 +77,7 @@ function extractUser(idTokenStr) {
   return {
     sub: payload.sub,
     email: payload.email,
-    name: payload.name || payload.email,
+    name: payload.name || [payload.given_name, payload.family_name].filter(Boolean).join(' ') || payload.email,
     picture: payload.picture || null,
   }
 }
