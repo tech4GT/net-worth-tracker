@@ -11,7 +11,7 @@ async function authFetch(url) {
 }
 
 export async function fetchStockPrice(ticker) {
-  const url = `${API_BASE}/api/yahoo/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=1d`
+  const url = `${API_BASE}/api/yahoo/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d`
   const res = await authFetch(url)
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
 
