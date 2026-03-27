@@ -2,10 +2,9 @@ import { useState, useRef } from 'react'
 import useStore from '../../store/store'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 
 async function extractPdfText(file) {
-  // Use the legacy build which doesn't require a web worker
-  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
 
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({
