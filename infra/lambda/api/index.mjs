@@ -17,6 +17,18 @@ import { handleUpdateSettings } from './routes/settings.mjs';
 import { handleImport } from './routes/import.mjs';
 import { handleYahooProxy } from './routes/yahoo-proxy.mjs';
 import { handleTelemetry } from './routes/telemetry.mjs';
+import {
+  handleGetBudgetState,
+  handleUpdateBudgetConfig,
+  handleCreateBudgetCategory,
+  handleUpdateBudgetCategory,
+  handleDeleteBudgetCategory,
+  handleConfirmTransactions,
+  handleGetMonthTransactions,
+  handleGetYtdSummary,
+  handleDeleteMonth,
+  handleParseStatement,
+} from './routes/budget.mjs';
 
 // ---------------------------------------------------------------------------
 // Response helpers
@@ -131,6 +143,60 @@ export async function handler(event) {
     // GET /api/yahoo/{proxy+}
     if (method === 'GET' && rawPath.startsWith('/api/yahoo/')) {
       return await handleYahooProxy(event);
+    }
+
+    // -----------------------------------------------------------------------
+    // Budget routes
+    // -----------------------------------------------------------------------
+
+    // GET /api/budget/ytd  (must be checked before GET /api/budget)
+    if (method === 'GET' && rawPath === '/api/budget/ytd') {
+      return await handleGetYtdSummary(event, userId);
+    }
+
+    // GET /api/budget/months/{month}/transactions
+    if (method === 'GET' && rawPath.match(/^\/api\/budget\/months\/[^/]+\/transactions$/)) {
+      return await handleGetMonthTransactions(event, userId);
+    }
+
+    // GET /api/budget
+    if (method === 'GET' && rawPath === '/api/budget') {
+      return await handleGetBudgetState(event, userId);
+    }
+
+    // PUT /api/budget/config
+    if (method === 'PUT' && rawPath === '/api/budget/config') {
+      return await handleUpdateBudgetConfig(event, userId);
+    }
+
+    // POST /api/budget/categories
+    if (method === 'POST' && rawPath === '/api/budget/categories') {
+      return await handleCreateBudgetCategory(event, userId);
+    }
+
+    // PUT /api/budget/categories/{id}
+    if (method === 'PUT' && rawPath.match(/^\/api\/budget\/categories\/[^/]+$/)) {
+      return await handleUpdateBudgetCategory(event, userId);
+    }
+
+    // DELETE /api/budget/categories/{id}
+    if (method === 'DELETE' && rawPath.match(/^\/api\/budget\/categories\/[^/]+$/)) {
+      return await handleDeleteBudgetCategory(event, userId);
+    }
+
+    // POST /api/budget/confirm
+    if (method === 'POST' && rawPath === '/api/budget/confirm') {
+      return await handleConfirmTransactions(event, userId);
+    }
+
+    // DELETE /api/budget/months/{month}
+    if (method === 'DELETE' && rawPath.match(/^\/api\/budget\/months\/[^/]+$/)) {
+      return await handleDeleteMonth(event, userId);
+    }
+
+    // POST /api/budget/parse-statement
+    if (method === 'POST' && rawPath === '/api/budget/parse-statement') {
+      return await handleParseStatement(event, userId);
     }
 
     // -----------------------------------------------------------------------

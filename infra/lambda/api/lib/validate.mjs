@@ -25,6 +25,7 @@ function isObject(v) {
 }
 
 const HEX_COLOR_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
 
 // ---------------------------------------------------------------------------
 // parseBody
@@ -258,6 +259,165 @@ export function validateSettings(body) {
   if (body.theme !== undefined) data.theme = body.theme;
   if (body.snapshotReminder !== undefined) data.snapshotReminder = body.snapshotReminder;
   if (body.exchangeRates !== undefined) data.exchangeRates = body.exchangeRates;
+
+  return { valid: true, data };
+}
+
+// ---------------------------------------------------------------------------
+// validateBudgetConfig
+// ---------------------------------------------------------------------------
+
+export function validateBudgetConfig(body) {
+  if (!isObject(body)) {
+    return { valid: false, error: 'Request body must be a JSON object' };
+  }
+
+  const errors = [];
+
+  // yearlyIncome — required positive number
+  if (!isNumber(body.yearlyIncome) || body.yearlyIncome <= 0) {
+    errors.push('yearlyIncome is required and must be a positive number');
+  }
+
+  // year — required 4-digit number
+  if (!isNumber(body.year) || !Number.isInteger(body.year) || body.year < 1000 || body.year > 9999) {
+    errors.push('year is required and must be a 4-digit integer');
+  }
+
+  // currency — required string, 2-5 chars
+  if (!isString(body.currency) || body.currency.length < 2 || body.currency.length > 5) {
+    errors.push('currency is required and must be a string between 2 and 5 characters');
+  }
+
+  if (errors.length > 0) {
+    return { valid: false, error: errors.join('; ') };
+  }
+
+  const data = {
+    yearlyIncome: body.yearlyIncome,
+    year: body.year,
+    currency: body.currency,
+  };
+
+  return { valid: true, data };
+}
+
+// ---------------------------------------------------------------------------
+// validateBudgetCategory
+// ---------------------------------------------------------------------------
+
+export function validateBudgetCategory(body) {
+  if (!isObject(body)) {
+    return { valid: false, error: 'Request body must be a JSON object' };
+  }
+
+  const errors = [];
+
+  // name — required string, 1-100 chars
+  if (!isString(body.name) || body.name.length < 1 || body.name.length > 100) {
+    errors.push('name is required and must be a string between 1 and 100 characters');
+  }
+
+  // percentOfIncome — required number, 0-100
+  if (!isNumber(body.percentOfIncome) || body.percentOfIncome < 0 || body.percentOfIncome > 100) {
+    errors.push('percentOfIncome is required and must be a number between 0 and 100');
+  }
+
+  // color — required string, hex pattern
+  if (!isString(body.color) || !HEX_COLOR_RE.test(body.color)) {
+    errors.push('color is required and must be a valid hex color (e.g. #ff0000)');
+  }
+
+  // icon — optional string, max 50
+  if (body.icon !== undefined) {
+    if (!isString(body.icon) || body.icon.length > 50) {
+      errors.push('icon must be a string of at most 50 characters');
+    }
+  }
+
+  if (errors.length > 0) {
+    return { valid: false, error: errors.join('; ') };
+  }
+
+  const data = {
+    name: body.name,
+    percentOfIncome: body.percentOfIncome,
+    color: body.color,
+  };
+  if (body.icon !== undefined) data.icon = body.icon;
+
+  return { valid: true, data };
+}
+
+// ---------------------------------------------------------------------------
+// validateConfirmTransactions
+// ---------------------------------------------------------------------------
+
+export function validateConfirmTransactions(body) {
+  if (!isObject(body)) {
+    return { valid: false, error: 'Request body must be a JSON object' };
+  }
+
+  const errors = [];
+
+  // month — required string in YYYY-MM format
+  if (!isString(body.month) || !MONTH_RE.test(body.month)) {
+    errors.push('month is required and must be in YYYY-MM format');
+  }
+
+  // actualIncome — required non-negative number
+  if (!isNumber(body.actualIncome) || body.actualIncome < 0) {
+    errors.push('actualIncome is required and must be a non-negative number');
+  }
+
+  // transactions — required array
+  if (!Array.isArray(body.transactions)) {
+    errors.push('transactions is required and must be an array');
+  } else {
+    for (let i = 0; i < body.transactions.length; i++) {
+      const tx = body.transactions[i];
+      if (!isObject(tx)) {
+        errors.push(`transactions[${i}] must be an object`);
+        break;
+      }
+      if (!isString(tx.description) || tx.description.length < 1 || tx.description.length > 500) {
+        errors.push(`transactions[${i}].description is required and must be 1-500 characters`);
+      }
+      if (!isNumber(tx.amount) || tx.amount < 0) {
+        errors.push(`transactions[${i}].amount is required and must be a non-negative number`);
+      }
+      if (!isString(tx.budgetCategoryId) || tx.budgetCategoryId.length === 0) {
+        errors.push(`transactions[${i}].budgetCategoryId is required and must be a non-empty string`);
+      }
+      // date — optional string
+      if (tx.date !== undefined && !isString(tx.date)) {
+        errors.push(`transactions[${i}].date must be a string if provided`);
+      }
+      // id — optional string
+      if (tx.id !== undefined && !isString(tx.id)) {
+        errors.push(`transactions[${i}].id must be a string if provided`);
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    return { valid: false, error: errors.join('; ') };
+  }
+
+  const data = {
+    month: body.month,
+    actualIncome: body.actualIncome,
+    transactions: body.transactions.map((tx) => {
+      const cleaned = {
+        description: tx.description,
+        amount: tx.amount,
+        budgetCategoryId: tx.budgetCategoryId,
+      };
+      if (tx.date !== undefined) cleaned.date = tx.date;
+      if (tx.id !== undefined) cleaned.id = tx.id;
+      return cleaned;
+    }),
+  };
 
   return { valid: true, data };
 }

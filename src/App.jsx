@@ -9,6 +9,7 @@ import AssetsPage from './pages/AssetsPage'
 import LiabilitiesPage from './pages/LiabilitiesPage'
 import HistoryPage from './pages/HistoryPage'
 import SettingsPage from './pages/SettingsPage'
+import BudgetPage from './pages/BudgetPage'
 
 export default function App() {
   useTheme()
@@ -30,6 +31,7 @@ export default function App() {
             <Route path="/liabilities" element={<LiabilitiesPage />} />
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/budget" element={<BudgetPage />} />
           </Route>
         </Routes>
       </HashRouter>

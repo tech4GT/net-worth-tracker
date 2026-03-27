@@ -43,8 +43,8 @@ export class NwtStack extends cdk.Stack {
     const fn = new lambda.Function(this, "ApiFunction", {
       runtime: lambda.Runtime.NODEJS_20_X,
       architecture: lambda.Architecture.ARM_64,
-      memorySize: 128,
-      timeout: cdk.Duration.seconds(10),
+      memorySize: 256,
+      timeout: cdk.Duration.seconds(60),
       handler: "index.handler",
       code: lambda.Code.fromAsset(path.join(__dirname, "..", "lambda", "api")),
       environment: {
@@ -63,6 +63,12 @@ export class NwtStack extends cdk.Stack {
 
     // Grant DynamoDB read/write
     table.grantReadWriteData(fn);
+
+    // Grant Bedrock InvokeModel for budget AI features
+    fn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      actions: ['bedrock:InvokeModel'],
+      resources: ['arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku*'],
+    }));
 
     // ---------------------------------------------------------------
     // Cognito User Pool
@@ -200,6 +206,16 @@ export class NwtStack extends cdk.Stack {
       { method: HttpMethod.PUT, path: "/api/settings" },
       { method: HttpMethod.POST, path: "/api/import" },
       { method: HttpMethod.GET, path: "/api/yahoo/{proxy+}" },
+      { method: HttpMethod.GET, path: "/api/budget/state" },
+      { method: HttpMethod.PUT, path: "/api/budget/config" },
+      { method: HttpMethod.POST, path: "/api/budget/categories" },
+      { method: HttpMethod.PUT, path: "/api/budget/categories/{id}" },
+      { method: HttpMethod.DELETE, path: "/api/budget/categories/{id}" },
+      { method: HttpMethod.POST, path: "/api/budget/parse-statement" },
+      { method: HttpMethod.POST, path: "/api/budget/transactions/confirm" },
+      { method: HttpMethod.GET, path: "/api/budget/months/{month}/transactions" },
+      { method: HttpMethod.GET, path: "/api/budget/ytd-summary" },
+      { method: HttpMethod.DELETE, path: "/api/budget/months/{month}" },
     ];
 
     for (const route of authorizedRoutes) {
@@ -272,7 +288,7 @@ export class NwtStack extends cdk.Stack {
           period: cdk.Duration.minutes(5),
           statistic: "p99",
         }),
-        threshold: 5000, // milliseconds
+        threshold: 30000, // milliseconds
         evaluationPeriods: 2,
         comparisonOperator:
           cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,

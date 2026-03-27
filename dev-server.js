@@ -103,6 +103,23 @@ const DEFAULT_CATEGORIES = [
   { id: 'cat-other-liabilities', name: 'Other Liabilities', type: 'liability', icon: 'box', color: '#9f1239', isDefault: true },
 ];
 
+const DEFAULT_BUDGET_CATEGORIES = [
+  { id: 'bcat-housing', name: 'Housing', color: '#6366f1', icon: 'home', percentOfIncome: 30, isDefault: true },
+  { id: 'bcat-transportation', name: 'Transportation', color: '#f59e0b', icon: 'car', percentOfIncome: 10, isDefault: true },
+  { id: 'bcat-food', name: 'Food & Dining', color: '#22c55e', icon: 'utensils', percentOfIncome: 15, isDefault: true },
+  { id: 'bcat-utilities', name: 'Utilities', color: '#06b6d4', icon: 'bolt', percentOfIncome: 5, isDefault: true },
+  { id: 'bcat-insurance', name: 'Insurance', color: '#8b5cf6', icon: 'shield', percentOfIncome: 5, isDefault: true },
+  { id: 'bcat-healthcare', name: 'Healthcare', color: '#ec4899', icon: 'heart', percentOfIncome: 5, isDefault: true },
+  { id: 'bcat-savings', name: 'Savings & Investing', color: '#10b981', icon: 'piggy-bank', percentOfIncome: 15, isDefault: true },
+  { id: 'bcat-entertainment', name: 'Entertainment', color: '#f97316', icon: 'star', percentOfIncome: 5, isDefault: true },
+  { id: 'bcat-personal', name: 'Personal', color: '#64748b', icon: 'user', percentOfIncome: 5, isDefault: true },
+  { id: 'bcat-other', name: 'Other', color: '#9f1239', icon: 'box', percentOfIncome: 5, isDefault: true },
+];
+
+const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+const MAX_BUDGET_CATEGORIES = 50;
+const MAX_TRANSACTIONS = 500;
+
 const DEFAULT_SETTINGS = {
   baseCurrency: 'USD',
   theme: 'system',
@@ -231,6 +248,15 @@ function seedDefaults() {
     const now = new Date().toISOString();
     for (const cat of DEFAULT_CATEGORIES) {
       partition[`CAT#${cat.id}`] = { ...cat, createdAt: now, updatedAt: now };
+    }
+  }
+
+  // Seed default budget categories
+  const hasBudgetCats = Object.keys(partition).some((sk) => sk.startsWith('BCAT#'));
+  if (!hasBudgetCats) {
+    const now = new Date().toISOString();
+    for (const bcat of DEFAULT_BUDGET_CATEGORIES) {
+      partition[`BCAT#${bcat.id}`] = { ...bcat, createdAt: now, updatedAt: now };
     }
   }
 
@@ -514,6 +540,10 @@ function handleGetState() {
 
   for (const record of allRecords) {
     const sk = record.SK;
+    // Skip budget entities — they are served via /api/budget/* routes
+    if (sk === 'BUDGETCFG' || sk.startsWith('BCAT#') || sk.startsWith('BMONTH#') || sk.startsWith('BTX#')) {
+      continue;
+    }
     if (sk.startsWith('ITEM#')) {
       const cleaned = stripKeys(record);
       cleaned.id = idFromSK(sk);
@@ -1040,6 +1070,486 @@ function handleTelemetry(body) {
 }
 
 // ---------------------------------------------------------------------------
+// Budget route handlers
+// ---------------------------------------------------------------------------
+
+// GET /api/budget/state
+function handleGetBudgetState() {
+  const partition = userPartition();
+
+  let config = null;
+  const categories = [];
+  const months = [];
+
+  for (const [sk, data] of Object.entries(partition)) {
+    if (sk === 'BUDGETCFG') {
+      config = { ...data };
+    } else if (sk.startsWith('BCAT#')) {
+      const cleaned = { ...data };
+      cleaned.id = sk.slice(5);
+      categories.push(cleaned);
+    } else if (sk.startsWith('BMONTH#')) {
+      const cleaned = { ...data };
+      cleaned.month = sk.slice(7);
+      months.push(cleaned);
+    }
+  }
+
+  // Seed default budget categories if none exist
+  if (categories.length === 0) {
+    const now = new Date().toISOString();
+    for (const bcat of DEFAULT_BUDGET_CATEGORIES) {
+      dbPutItem(`BCAT#${bcat.id}`, { ...bcat, createdAt: now, updatedAt: now });
+      categories.push({ ...bcat, createdAt: now, updatedAt: now });
+    }
+  }
+
+  return { status: 200, body: { config, categories, months } };
+}
+
+// PUT /api/budget/config
+function handleUpdateBudgetConfig(body) {
+  if (!body || !isObject(body)) {
+    return { status: 400, body: { error: 'Invalid or missing request body' } };
+  }
+  const errors = [];
+  if (body.monthlyIncome !== undefined && (!isNumber(body.monthlyIncome) || body.monthlyIncome < 0)) {
+    errors.push('monthlyIncome must be a non-negative number');
+  }
+  if (body.currency !== undefined) {
+    if (!isString(body.currency) || body.currency.length < 2 || body.currency.length > 5) {
+      errors.push('currency must be a string between 2 and 5 characters');
+    }
+  }
+  if (errors.length > 0) {
+    return { status: 400, body: { error: errors.join('; ') } };
+  }
+  const existing = dbGetItem('BUDGETCFG');
+  let result;
+  if (existing) {
+    result = dbUpdateItem('BUDGETCFG', body);
+  } else {
+    result = dbPutItem('BUDGETCFG', body);
+  }
+  return { status: 200, body: stripKeys(result) };
+}
+
+// POST /api/budget/categories
+function handleCreateBudgetCategory(body) {
+  if (!body || !isObject(body)) {
+    return { status: 400, body: { error: 'Invalid or missing request body' } };
+  }
+  const errors = [];
+  if (!isString(body.name) || body.name.length < 1 || body.name.length > 100) {
+    errors.push('name is required and must be a string between 1 and 100 characters');
+  }
+  if (body.color !== undefined && (!isString(body.color) || !HEX_COLOR_RE.test(body.color))) {
+    errors.push('color must be a valid hex color');
+  }
+  if (body.icon !== undefined && (!isString(body.icon) || body.icon.length > 50)) {
+    errors.push('icon must be a string of at most 50 characters');
+  }
+  if (body.percentOfIncome !== undefined && (!isNumber(body.percentOfIncome) || body.percentOfIncome < 0 || body.percentOfIncome > 100)) {
+    errors.push('percentOfIncome must be a number between 0 and 100');
+  }
+  if (errors.length > 0) {
+    return { status: 400, body: { error: errors.join('; ') } };
+  }
+
+  // Check limit
+  const existingCats = dbQueryByPrefix('BCAT#');
+  if (existingCats.length >= MAX_BUDGET_CATEGORIES) {
+    return { status: 400, body: { error: `Maximum of ${MAX_BUDGET_CATEGORIES} budget categories reached` } };
+  }
+
+  const id = crypto.randomUUID();
+  const data = {
+    id,
+    name: body.name,
+    color: body.color || '#64748b',
+    icon: body.icon || 'box',
+    percentOfIncome: body.percentOfIncome ?? 0,
+    isDefault: false,
+  };
+  const saved = dbPutItem(`BCAT#${id}`, data);
+  return { status: 201, body: stripKeys(saved) };
+}
+
+// PUT /api/budget/categories/:id
+function handleUpdateBudgetCategory(pathname, body) {
+  const id = extractIdFromPath(pathname);
+  if (!id) {
+    return { status: 400, body: { error: 'Missing category id in path' } };
+  }
+  if (!body || !isObject(body)) {
+    return { status: 400, body: { error: 'Invalid or missing request body' } };
+  }
+  const existing = dbGetItem(`BCAT#${id}`);
+  if (!existing) {
+    return { status: 404, body: { error: 'Budget category not found' } };
+  }
+  const errors = [];
+  if (body.name !== undefined && (!isString(body.name) || body.name.length < 1 || body.name.length > 100)) {
+    errors.push('name must be a string between 1 and 100 characters');
+  }
+  if (body.color !== undefined && (!isString(body.color) || !HEX_COLOR_RE.test(body.color))) {
+    errors.push('color must be a valid hex color');
+  }
+  if (body.icon !== undefined && (!isString(body.icon) || body.icon.length > 50)) {
+    errors.push('icon must be a string of at most 50 characters');
+  }
+  if (body.percentOfIncome !== undefined && (!isNumber(body.percentOfIncome) || body.percentOfIncome < 0 || body.percentOfIncome > 100)) {
+    errors.push('percentOfIncome must be a number between 0 and 100');
+  }
+  if (errors.length > 0) {
+    return { status: 400, body: { error: errors.join('; ') } };
+  }
+  const updates = {};
+  if (body.name !== undefined) updates.name = body.name;
+  if (body.color !== undefined) updates.color = body.color;
+  if (body.icon !== undefined) updates.icon = body.icon;
+  if (body.percentOfIncome !== undefined) updates.percentOfIncome = body.percentOfIncome;
+  const updated = dbUpdateItem(`BCAT#${id}`, updates);
+  return { status: 200, body: stripKeys(updated) };
+}
+
+// DELETE /api/budget/categories/:id
+function handleDeleteBudgetCategory(pathname) {
+  const id = extractIdFromPath(pathname);
+  if (!id) {
+    return { status: 400, body: { error: 'Missing category id in path' } };
+  }
+  const category = dbGetItem(`BCAT#${id}`);
+  if (!category) {
+    return { status: 404, body: { error: 'Budget category not found' } };
+  }
+  if (category.isDefault === true) {
+    return { status: 400, body: { error: 'Cannot delete a default budget category' } };
+  }
+
+  // Reassign BTX# entries from this category to bcat-other
+  const partition = userPartition();
+  let reassignedCount = 0;
+  for (const [sk, data] of Object.entries(partition)) {
+    if (sk.startsWith('BTX#') && data.categoryId === id) {
+      dbUpdateItem(sk, { categoryId: 'bcat-other' });
+      reassignedCount++;
+    }
+  }
+
+  dbDeleteItem(`BCAT#${id}`);
+  return { status: 200, body: { deleted: id, reassigned: reassignedCount } };
+}
+
+// POST /api/budget/parse-statement — MOCK AI parsing for dev
+function handleParseStatement(body) {
+  if (!body || !isObject(body)) {
+    return { status: 400, body: { error: 'Invalid or missing request body' } };
+  }
+  if (!body.month || !isString(body.month) || !MONTH_RE.test(body.month)) {
+    return { status: 400, body: { error: 'month is required and must be in YYYY-MM format' } };
+  }
+  if (!body.statementText || !isString(body.statementText)) {
+    return { status: 400, body: { error: 'statementText is required and must be a non-empty string' } };
+  }
+
+  const lines = body.statementText.split('\n').filter((l) => l.trim().length > 0);
+
+  // Keyword-to-category mapping
+  const keywordMap = [
+    { keywords: ['rent', 'mortgage'], categoryId: 'bcat-housing' },
+    { keywords: ['grocery', 'food', 'restaurant', 'dining', 'cafe', 'coffee'], categoryId: 'bcat-food' },
+    { keywords: ['gas', 'uber', 'lyft', 'transit', 'parking', 'fuel'], categoryId: 'bcat-transportation' },
+    { keywords: ['netflix', 'spotify', 'hulu', 'disney', 'movie', 'concert', 'game'], categoryId: 'bcat-entertainment' },
+    { keywords: ['doctor', 'pharmacy', 'medical', 'hospital', 'dental', 'health'], categoryId: 'bcat-healthcare' },
+    { keywords: ['electric', 'water', 'internet', 'phone', 'utility', 'cable'], categoryId: 'bcat-utilities' },
+    { keywords: ['insurance', 'premium', 'policy'], categoryId: 'bcat-insurance' },
+    { keywords: ['savings', 'invest', '401k', 'ira', 'deposit'], categoryId: 'bcat-savings' },
+    { keywords: ['clothing', 'haircut', 'gym', 'personal'], categoryId: 'bcat-personal' },
+  ];
+
+  // Regex patterns for extracting transaction data from a line
+  // Tries: "DATE  DESCRIPTION  AMOUNT" or "DESCRIPTION  AMOUNT" patterns
+  const dateAmountRe = /^(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\s+(.+?)\s+\$?([\d,]+\.?\d*)\s*$/;
+  const amountOnlyRe = /^(.+?)\s+\$?([\d,]+\.?\d*)\s*$/;
+
+  const transactions = [];
+  let detectedIncome = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    let date = null;
+    let description = '';
+    let amount = 0;
+
+    // Try date+description+amount
+    const m1 = dateAmountRe.exec(trimmed);
+    if (m1) {
+      date = m1[1];
+      description = m1[2].trim();
+      amount = parseFloat(m1[3].replace(/,/g, ''));
+    } else {
+      // Try description+amount
+      const m2 = amountOnlyRe.exec(trimmed);
+      if (m2) {
+        description = m2[1].trim();
+        amount = parseFloat(m2[2].replace(/,/g, ''));
+      } else {
+        // Unparseable line — skip
+        continue;
+      }
+    }
+
+    if (isNaN(amount) || amount <= 0) continue;
+
+    // Detect income lines
+    const lowerDesc = description.toLowerCase();
+    if (lowerDesc.includes('salary') || lowerDesc.includes('paycheck') || lowerDesc.includes('income') || lowerDesc.includes('payroll')) {
+      if (detectedIncome === null) detectedIncome = 0;
+      detectedIncome += amount;
+      continue; // Don't add income as an expense transaction
+    }
+
+    // Categorize by keyword matching
+    let categoryId = 'bcat-other';
+    let confidence = 0.5;
+    for (const mapping of keywordMap) {
+      if (mapping.keywords.some((kw) => lowerDesc.includes(kw))) {
+        categoryId = mapping.categoryId;
+        confidence = 0.95;
+        break;
+      }
+    }
+
+    transactions.push({
+      tempId: crypto.randomUUID(),
+      date: date || `${body.month}-01`,
+      description,
+      amount,
+      categoryId,
+      confidence,
+    });
+  }
+
+  // Use client-provided income if present, otherwise use detected
+  const finalIncome = body.actualIncome != null ? body.actualIncome : detectedIncome;
+
+  return {
+    status: 200,
+    body: {
+      month: body.month,
+      transactions,
+      detectedIncome: finalIncome,
+    },
+  };
+}
+
+// POST /api/budget/transactions/confirm
+function handleConfirmTransactions(body) {
+  if (!body || !isObject(body)) {
+    return { status: 400, body: { error: 'Invalid or missing request body' } };
+  }
+  if (!body.month || !isString(body.month) || !MONTH_RE.test(body.month)) {
+    return { status: 400, body: { error: 'month is required and must be in YYYY-MM format' } };
+  }
+  if (!Array.isArray(body.transactions) || body.transactions.length === 0) {
+    return { status: 400, body: { error: 'transactions must be a non-empty array' } };
+  }
+  if (body.transactions.length > MAX_TRANSACTIONS) {
+    return { status: 400, body: { error: `transactions exceeds maximum of ${MAX_TRANSACTIONS}` } };
+  }
+
+  const now = new Date().toISOString();
+  const categoryTotals = {};
+  let totalSpent = 0;
+
+  // Write each transaction as BTX#
+  for (const tx of body.transactions) {
+    const id = crypto.randomUUID();
+    const txData = {
+      id,
+      month: body.month,
+      date: tx.date || `${body.month}-01`,
+      description: tx.description || '',
+      amount: tx.amount || 0,
+      categoryId: tx.categoryId || 'bcat-other',
+      confidence: tx.confidence,
+    };
+    dbPutItem(`BTX#${id}`, txData);
+
+    // Accumulate category totals
+    const catId = txData.categoryId;
+    if (!categoryTotals[catId]) {
+      categoryTotals[catId] = 0;
+    }
+    categoryTotals[catId] += txData.amount;
+    totalSpent += txData.amount;
+  }
+
+  // Upsert BMONTH#{month}
+  const monthData = {
+    month: body.month,
+    actualIncome: body.actualIncome ?? null,
+    totalSpent,
+    categoryTotals,
+    transactionCount: body.transactions.length,
+  };
+  const existingMonth = dbGetItem(`BMONTH#${body.month}`);
+  let result;
+  if (existingMonth) {
+    result = dbUpdateItem(`BMONTH#${body.month}`, monthData);
+  } else {
+    result = dbPutItem(`BMONTH#${body.month}`, monthData);
+  }
+
+  const cleaned = stripKeys(result);
+  cleaned.month = body.month;
+  return { status: 201, body: cleaned };
+}
+
+// GET /api/budget/months/:month/transactions
+function handleGetMonthTransactions(pathname) {
+  // /api/budget/months/{month}/transactions
+  const segments = pathname.split('/');
+  const month = segments[4] ? decodeURIComponent(segments[4]) : null;
+  if (!month || !MONTH_RE.test(month)) {
+    return { status: 400, body: { error: 'Invalid or missing month in path' } };
+  }
+
+  const allTx = dbQueryByPrefix('BTX#');
+  const transactions = allTx
+    .filter((tx) => tx.month === month)
+    .map((tx) => {
+      const cleaned = stripKeys(tx);
+      cleaned.id = idFromSK(tx.SK);
+      return cleaned;
+    });
+
+  return { status: 200, body: { transactions } };
+}
+
+// GET /api/budget/ytd-summary
+function handleGetYtdSummary(queryString) {
+  const params = parseQueryString(queryString);
+  const year = params.year || new Date().getFullYear().toString();
+
+  // Load config
+  const configRecord = dbGetItem('BUDGETCFG');
+  const config = configRecord ? stripKeys(configRecord) : null;
+  const monthlyIncome = config?.monthlyIncome || 0;
+
+  // Load all budget categories
+  const catRecords = dbQueryByPrefix('BCAT#');
+  const categoriesById = {};
+  for (const cat of catRecords) {
+    const id = idFromSK(cat.SK);
+    categoriesById[id] = stripKeys(cat);
+    categoriesById[id].id = id;
+  }
+
+  // Load all months for this year
+  const monthRecords = dbQueryByPrefix('BMONTH#');
+  const yearMonths = monthRecords.filter((m) => {
+    const monthStr = idFromSK(m.SK);
+    return monthStr.startsWith(year);
+  });
+
+  // How many months have passed in this year (or months with data)
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear().toString();
+  let monthsElapsed;
+  if (year === currentYear) {
+    monthsElapsed = currentDate.getMonth() + 1;
+  } else if (parseInt(year) < parseInt(currentYear)) {
+    monthsElapsed = 12;
+  } else {
+    monthsElapsed = 0;
+  }
+
+  const ytdExpectedIncome = monthlyIncome * monthsElapsed;
+  let ytdActualIncome = 0;
+  let ytdTotalSpent = 0;
+  const ytdCategoryTotals = {};
+
+  for (const monthRecord of yearMonths) {
+    const data = stripKeys(monthRecord);
+    ytdActualIncome += data.actualIncome || 0;
+    ytdTotalSpent += data.totalSpent || 0;
+    if (data.categoryTotals) {
+      for (const [catId, total] of Object.entries(data.categoryTotals)) {
+        if (!ytdCategoryTotals[catId]) {
+          ytdCategoryTotals[catId] = 0;
+        }
+        ytdCategoryTotals[catId] += total;
+      }
+    }
+  }
+
+  // Build per-category summary
+  const categoryBreakdown = [];
+  for (const [catId, cat] of Object.entries(categoriesById)) {
+    const expectedMonthly = monthlyIncome * (cat.percentOfIncome || 0) / 100;
+    const expectedYtd = expectedMonthly * monthsElapsed;
+    const actualYtd = ytdCategoryTotals[catId] || 0;
+    categoryBreakdown.push({
+      categoryId: catId,
+      name: cat.name,
+      color: cat.color,
+      icon: cat.icon,
+      expectedYtd,
+      actualYtd,
+      difference: expectedYtd - actualYtd,
+      percentUsed: expectedYtd > 0 ? (actualYtd / expectedYtd) * 100 : 0,
+    });
+  }
+
+  // Debt detection: spending > income
+  const inDebt = ytdTotalSpent > (ytdActualIncome || ytdExpectedIncome);
+
+  return {
+    status: 200,
+    body: {
+      year,
+      monthsElapsed,
+      monthsWithData: yearMonths.length,
+      ytdExpectedIncome,
+      ytdActualIncome,
+      ytdTotalSpent,
+      ytdSavings: (ytdActualIncome || ytdExpectedIncome) - ytdTotalSpent,
+      inDebt,
+      categoryBreakdown,
+    },
+  };
+}
+
+// DELETE /api/budget/months/:month
+function handleDeleteBudgetMonth(pathname) {
+  const segments = pathname.split('/');
+  const month = segments[4] ? decodeURIComponent(segments[4]) : null;
+  if (!month || !MONTH_RE.test(month)) {
+    return { status: 400, body: { error: 'Invalid or missing month in path' } };
+  }
+
+  // Delete BMONTH# record
+  dbDeleteItem(`BMONTH#${month}`);
+
+  // Delete all BTX# entries for this month
+  const partition = userPartition();
+  let deletedTx = 0;
+  for (const [sk, data] of Object.entries(partition)) {
+    if (sk.startsWith('BTX#') && data.month === month) {
+      delete partition[sk];
+      deletedTx++;
+    }
+  }
+  if (deletedTx > 0) {
+    persistStore();
+  }
+
+  return { status: 200, body: { deleted: month, deletedTransactions: deletedTx } };
+}
+
+// ---------------------------------------------------------------------------
 // Request router
 // ---------------------------------------------------------------------------
 
@@ -1137,6 +1647,47 @@ async function handleRequest(req, res) {
     // GET /api/yahoo/*
     else if (method === 'GET' && pathname.startsWith('/api/yahoo/')) {
       result = await handleYahooProxy(pathname, queryString);
+    }
+    // --- Budget routes ---
+    // GET /api/budget/state
+    else if (method === 'GET' && pathname === '/api/budget/state') {
+      result = handleGetBudgetState();
+    }
+    // PUT /api/budget/config
+    else if (method === 'PUT' && pathname === '/api/budget/config') {
+      result = handleUpdateBudgetConfig(body);
+    }
+    // GET /api/budget/ytd-summary
+    else if (method === 'GET' && pathname === '/api/budget/ytd-summary') {
+      result = handleGetYtdSummary(queryString);
+    }
+    // POST /api/budget/parse-statement
+    else if (method === 'POST' && pathname === '/api/budget/parse-statement') {
+      result = handleParseStatement(body);
+    }
+    // POST /api/budget/transactions/confirm
+    else if (method === 'POST' && pathname === '/api/budget/transactions/confirm') {
+      result = handleConfirmTransactions(body);
+    }
+    // POST /api/budget/categories
+    else if (method === 'POST' && pathname === '/api/budget/categories') {
+      result = handleCreateBudgetCategory(body);
+    }
+    // PUT /api/budget/categories/:id
+    else if (method === 'PUT' && /^\/api\/budget\/categories\/[^/]+$/.test(pathname)) {
+      result = handleUpdateBudgetCategory(pathname, body);
+    }
+    // DELETE /api/budget/categories/:id
+    else if (method === 'DELETE' && /^\/api\/budget\/categories\/[^/]+$/.test(pathname)) {
+      result = handleDeleteBudgetCategory(pathname);
+    }
+    // GET /api/budget/months/:month/transactions
+    else if (method === 'GET' && /^\/api\/budget\/months\/[^/]+\/transactions$/.test(pathname)) {
+      result = handleGetMonthTransactions(pathname);
+    }
+    // DELETE /api/budget/months/:month
+    else if (method === 'DELETE' && /^\/api\/budget\/months\/[^/]+$/.test(pathname)) {
+      result = handleDeleteBudgetMonth(pathname);
     }
     // 404
     else {

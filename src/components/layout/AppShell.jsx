@@ -12,6 +12,7 @@ const pageTitles = {
   '/liabilities': 'Liabilities',
   '/history': 'History',
   '/settings': 'Settings',
+  '/budget': 'Budget',
 }
 
 export default function AppShell() {

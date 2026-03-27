@@ -54,15 +54,15 @@ export default function LoginPage() {
                   </>
                 )}
               </button>
-              <a
-                href="#features"
+              <button
+                onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
                 className="inline-flex items-center justify-center gap-2 rounded-xl px-6 py-3.5 text-base font-medium text-white/90 border border-white/20 hover:bg-white/10 transition-colors cursor-pointer"
               >
                 Learn more
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
-              </a>
+              </button>
             </div>
           </div>
         </div>

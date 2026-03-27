@@ -38,3 +38,16 @@ export const CHART_COLORS = [
   '#14b8a6', '#a855f7', '#eab308', '#3b82f6', '#e11d48',
 ]
 export const SCHEMA_VERSION = 3
+
+export const DEFAULT_BUDGET_CATEGORIES = [
+  { id: 'bcat-housing', name: 'Housing', color: '#6366f1', icon: 'home', percentOfIncome: 30 },
+  { id: 'bcat-transportation', name: 'Transportation', color: '#f59e0b', icon: 'car', percentOfIncome: 10 },
+  { id: 'bcat-food', name: 'Food & Dining', color: '#22c55e', icon: 'utensils', percentOfIncome: 15 },
+  { id: 'bcat-utilities', name: 'Utilities', color: '#06b6d4', icon: 'bolt', percentOfIncome: 5 },
+  { id: 'bcat-insurance', name: 'Insurance', color: '#8b5cf6', icon: 'shield', percentOfIncome: 5 },
+  { id: 'bcat-healthcare', name: 'Healthcare', color: '#ec4899', icon: 'heart', percentOfIncome: 5 },
+  { id: 'bcat-savings', name: 'Savings & Investing', color: '#10b981', icon: 'piggy-bank', percentOfIncome: 15 },
+  { id: 'bcat-entertainment', name: 'Entertainment', color: '#f97316', icon: 'star', percentOfIncome: 5 },
+  { id: 'bcat-personal', name: 'Personal', color: '#64748b', icon: 'user', percentOfIncome: 5 },
+  { id: 'bcat-other', name: 'Other', color: '#9f1239', icon: 'box', percentOfIncome: 5 },
+]

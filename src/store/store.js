@@ -28,6 +28,19 @@ const useStore = create((set, get) => ({
   stocksRefreshing: false,
   stockRefreshErrors: {},
 
+  // --- Budget Data ---
+  budgetConfig: null,
+  budgetCategories: [],
+  budgetMonths: [],
+  budgetYtdSummary: null,
+
+  // --- Budget UI state ---
+  budgetLoading: false,
+  budgetHydrated: false,
+  budgetError: null,
+  parsedTransactions: null,
+  parsingStatement: false,
+
   // --- Initial load ---
   loadUserData: async () => {
     set({ loading: true, error: null })
@@ -435,6 +448,199 @@ const useStore = create((set, get) => ({
       toastSuccess(`Imported ${result.imported.items} items`)
     } catch (err) {
       toastError('Import failed')
+      throw err
+    }
+  },
+
+  // --- Budget ---
+  loadBudgetData: async () => {
+    set({ budgetLoading: true, budgetError: null })
+    try {
+      const data = await api.get('/api/budget/state')
+      set({
+        budgetConfig: data.config,
+        budgetCategories: data.categories,
+        budgetMonths: data.months,
+        budgetLoading: false,
+        budgetHydrated: true,
+      })
+      track('budget_load')
+    } catch (err) {
+      set({ budgetLoading: false, budgetError: err.message })
+    }
+  },
+
+  loadYtdSummary: async (year) => {
+    try {
+      const data = await api.get(`/api/budget/ytd-summary?year=${year}`)
+      set({ budgetYtdSummary: data })
+    } catch (err) {
+      toastError('Failed to load YTD summary')
+      throw err
+    }
+  },
+
+  saveBudgetConfig: async (config) => {
+    const prev = get().budgetConfig
+    set({ budgetConfig: config })
+    try {
+      const saved = await api.put('/api/budget/config', config)
+      set({ budgetConfig: saved })
+      track('budget_config_save')
+      toastSuccess('Budget configuration saved')
+      return saved
+    } catch (err) {
+      set({ budgetConfig: prev })
+      toastError('Failed to save budget configuration')
+      throw err
+    }
+  },
+
+  addBudgetCategory: async (category) => {
+    const tempId = crypto.randomUUID()
+    const newCat = { ...category, id: tempId }
+
+    set((s) => ({
+      budgetCategories: [...s.budgetCategories, newCat],
+    }))
+    try {
+      const saved = await api.post('/api/budget/categories', category)
+      set((s) => ({
+        budgetCategories: s.budgetCategories.map((c) => (c.id === tempId ? saved : c)),
+      }))
+      track('budget_category_add')
+      return saved
+    } catch (err) {
+      set((s) => ({
+        budgetCategories: s.budgetCategories.filter((c) => c.id !== tempId),
+      }))
+      toastError('Failed to add budget category')
+      throw err
+    }
+  },
+
+  updateBudgetCategory: async (id, updates) => {
+    const state = get()
+    const original = state.budgetCategories.find((c) => c.id === id)
+    if (!original) return
+
+    set((s) => ({
+      budgetCategories: s.budgetCategories.map((c) =>
+        c.id === id ? { ...c, ...updates } : c
+      ),
+    }))
+    try {
+      const saved = await api.put(`/api/budget/categories/${id}`, updates)
+      set((s) => ({
+        budgetCategories: s.budgetCategories.map((c) => (c.id === id ? saved : c)),
+      }))
+      track('budget_category_update')
+      return saved
+    } catch (err) {
+      set((s) => ({
+        budgetCategories: s.budgetCategories.map((c) => (c.id === id ? original : c)),
+      }))
+      toastError('Failed to update budget category')
+      throw err
+    }
+  },
+
+  deleteBudgetCategory: async (id) => {
+    const state = get()
+    const cat = state.budgetCategories.find((c) => c.id === id)
+    if (!cat) return
+    if (cat.isDefault) {
+      toastError('Cannot delete a default budget category')
+      return
+    }
+
+    set((s) => ({
+      budgetCategories: s.budgetCategories.filter((c) => c.id !== id),
+    }))
+    try {
+      await api.delete(`/api/budget/categories/${id}`)
+      track('budget_category_delete')
+    } catch (err) {
+      set((s) => ({
+        budgetCategories: [...s.budgetCategories, cat],
+      }))
+      toastError('Failed to delete budget category')
+      throw err
+    }
+  },
+
+  parseStatement: async ({ month, statementText, actualIncome }) => {
+    set({ parsingStatement: true })
+    try {
+      const result = await api.post('/api/budget/parse-statement', {
+        month,
+        statementText,
+        actualIncome,
+      })
+      set({ parsedTransactions: result, parsingStatement: false })
+      track('budget_parse_statement')
+      return result
+    } catch (err) {
+      set({ parsingStatement: false })
+      toastError('Failed to parse statement')
+      throw err
+    }
+  },
+
+  confirmTransactions: async ({ month, actualIncome, transactions }) => {
+    try {
+      const result = await api.post('/api/budget/transactions/confirm', {
+        month,
+        actualIncome,
+        transactions,
+      })
+      set((s) => ({
+        parsedTransactions: null,
+        budgetMonths: [...s.budgetMonths.filter((m) => m.month !== month), result],
+      }))
+      // Reload YTD summary for the year of the confirmed month
+      const year = month.slice(0, 4)
+      await get().loadYtdSummary(year)
+      track('budget_transactions_confirm')
+      toastSuccess('Transactions confirmed')
+      return result
+    } catch (err) {
+      toastError('Failed to confirm transactions')
+      throw err
+    }
+  },
+
+  clearParsedTransactions: () => {
+    set({ parsedTransactions: null })
+  },
+
+  loadMonthTransactions: async (month) => {
+    try {
+      const data = await api.get(`/api/budget/months/${encodeURIComponent(month)}/transactions`)
+      return data
+    } catch (err) {
+      toastError('Failed to load month transactions')
+      throw err
+    }
+  },
+
+  deleteMonth: async (month) => {
+    const state = get()
+    const original = state.budgetMonths.find((m) => m.month === month)
+    if (!original) return
+
+    set((s) => ({
+      budgetMonths: s.budgetMonths.filter((m) => m.month !== month),
+    }))
+    try {
+      await api.delete(`/api/budget/months/${encodeURIComponent(month)}`)
+      track('budget_month_delete')
+      toastSuccess('Month deleted')
+    } catch (err) {
+      set((s) => ({
+        budgetMonths: [...s.budgetMonths, original],
+      }))
+      toastError('Failed to delete month')
       throw err
     }
   },
