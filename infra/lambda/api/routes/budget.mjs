@@ -431,7 +431,8 @@ export async function handleConfirmTransactions(event, userId) {
             month,
             description: tx.description,
             amount: tx.amount,
-            budgetCategoryId: tx.budgetCategoryId,
+            type: tx.type || 'expense',
+            budgetCategoryId: tx.budgetCategoryId || tx.categoryId,
             date: tx.date || now,
             createdAt: now,
             updatedAt: now,
@@ -451,20 +452,30 @@ export async function handleConfirmTransactions(event, userId) {
 
     const categoryTotals = {};
     let totalSpent = 0;
+    let totalIncome = 0;
 
     for (const tx of monthTx) {
+      if (tx.type === 'income') {
+        totalIncome += tx.amount;
+        continue;
+      }
       const catId = tx.budgetCategoryId;
       if (!categoryTotals[catId]) {
         categoryTotals[catId] = 0;
       }
-      categoryTotals[catId] += tx.amount;
-      totalSpent += tx.amount;
+      if (tx.type === 'refund') {
+        categoryTotals[catId] -= tx.amount;
+        totalSpent -= tx.amount;
+      } else {
+        categoryTotals[catId] += tx.amount;
+        totalSpent += tx.amount;
+      }
     }
 
     // Upsert BMONTH#{month}
     const monthData = {
       month,
-      actualIncome,
+      actualIncome: actualIncome || totalIncome,
       totalSpent,
       categoryTotals,
       transactionCount: monthTx.length,
