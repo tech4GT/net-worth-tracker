@@ -4,11 +4,16 @@ import Button from '../ui/Button'
 import Input from '../ui/Input'
 
 async function extractPdfText(file) {
-  const pdfjsLib = await import('pdfjs-dist')
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`
+  // Use the legacy build which doesn't require a web worker
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
 
   const arrayBuffer = await file.arrayBuffer()
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+    useWorkerFetch: false,
+    isEvalSupported: false,
+    useSystemFonts: true,
+  }).promise
   const pages = []
 
   for (let i = 1; i <= pdf.numPages; i++) {
