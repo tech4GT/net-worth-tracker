@@ -107,22 +107,22 @@ export function validateItem(body) {
     errors.push('isStock must be a boolean');
   }
 
-  // ticker — optional string, max 20
-  if (body.ticker !== undefined) {
+  // ticker — optional string or null, max 20
+  if (body.ticker !== undefined && body.ticker !== null) {
     if (!isString(body.ticker) || body.ticker.length > 20) {
       errors.push('ticker must be a string of at most 20 characters');
     }
   }
 
-  // shares — optional positive number
-  if (body.shares !== undefined) {
+  // shares — optional positive number or null
+  if (body.shares !== undefined && body.shares !== null) {
     if (!isNumber(body.shares) || body.shares <= 0) {
       errors.push('shares must be a positive number');
     }
   }
 
-  // pricePerShare — optional non-negative number
-  if (body.pricePerShare !== undefined) {
+  // pricePerShare — optional non-negative number or null
+  if (body.pricePerShare !== undefined && body.pricePerShare !== null) {
     if (!isNumber(body.pricePerShare) || body.pricePerShare < 0) {
       errors.push('pricePerShare must be a non-negative number');
     }

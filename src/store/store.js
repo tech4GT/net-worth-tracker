@@ -148,7 +148,7 @@ const useStore = create((set, get) => ({
       pendingIds: new Set([...s.pendingIds, ...tempIds]),
     }))
     try {
-      const saved = await api.post('/api/items/batch', newItems)
+      const saved = await api.post('/api/items/batch', { items: newItems })
       // Replace all temp entries with server-returned items
       const tempIdSet = new Set(tempIds)
       set((s) => ({
@@ -397,7 +397,7 @@ const useStore = create((set, get) => ({
       )
       if (changedItems.length > 0) {
         try {
-          await api.put('/api/items/batch', changedItems)
+          await api.put('/api/items/batch', { updates: changedItems })
           await api.put('/api/settings', { stocksLastRefreshed: now })
         } catch {
           // Stock prices updated locally; backend sync failed silently

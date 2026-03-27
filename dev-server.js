@@ -288,17 +288,17 @@ function validateItem(body) {
   if (body.isStock !== undefined && !isBoolean(body.isStock)) {
     errors.push('isStock must be a boolean');
   }
-  if (body.ticker !== undefined) {
+  if (body.ticker !== undefined && body.ticker !== null) {
     if (!isString(body.ticker) || body.ticker.length > 20) {
       errors.push('ticker must be a string of at most 20 characters');
     }
   }
-  if (body.shares !== undefined) {
+  if (body.shares !== undefined && body.shares !== null) {
     if (!isNumber(body.shares) || body.shares <= 0) {
       errors.push('shares must be a positive number');
     }
   }
-  if (body.pricePerShare !== undefined) {
+  if (body.pricePerShare !== undefined && body.pricePerShare !== null) {
     if (!isNumber(body.pricePerShare) || body.pricePerShare < 0) {
       errors.push('pricePerShare must be a non-negative number');
     }

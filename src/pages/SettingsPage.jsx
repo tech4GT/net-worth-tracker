@@ -419,11 +419,11 @@ function ImportExportSection() {
   const handleImport = () => {
     if (!importFile) return
     const reader = new FileReader()
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       try {
         if (importMode === 'json') {
           const data = JSON.parse(e.target.result)
-          importData(data)
+          await importData(data)
         } else {
           const rows = parseCSV(e.target.result)
           const items = rows.map((row) => {
@@ -455,7 +455,7 @@ function ImportExportSection() {
             alert('No valid items found in CSV')
             return
           }
-          addItems(items)
+          await addItems(items)
         }
         setShowConfirm(false)
         setImportFile(null)
