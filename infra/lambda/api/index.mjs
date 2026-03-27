@@ -149,8 +149,8 @@ export async function handler(event) {
     // Budget routes
     // -----------------------------------------------------------------------
 
-    // GET /api/budget/ytd  (must be checked before GET /api/budget)
-    if (method === 'GET' && rawPath === '/api/budget/ytd') {
+    // GET /api/budget/ytd-summary
+    if (method === 'GET' && rawPath === '/api/budget/ytd-summary') {
       return await handleGetYtdSummary(event, userId);
     }
 
@@ -159,8 +159,8 @@ export async function handler(event) {
       return await handleGetMonthTransactions(event, userId);
     }
 
-    // GET /api/budget
-    if (method === 'GET' && rawPath === '/api/budget') {
+    // GET /api/budget/state
+    if (method === 'GET' && rawPath === '/api/budget/state') {
       return await handleGetBudgetState(event, userId);
     }
 
@@ -184,8 +184,8 @@ export async function handler(event) {
       return await handleDeleteBudgetCategory(event, userId);
     }
 
-    // POST /api/budget/confirm
-    if (method === 'POST' && rawPath === '/api/budget/confirm') {
+    // POST /api/budget/transactions/confirm
+    if (method === 'POST' && rawPath === '/api/budget/transactions/confirm') {
       return await handleConfirmTransactions(event, userId);
     }
 
