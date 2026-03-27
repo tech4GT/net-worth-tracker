@@ -23,14 +23,16 @@ export default function YTDSummaryCards() {
     )
   }
 
-  const {
-    ytdActualIncome,
-    ytdExpectedIncome,
-    ytdActualSpending,
-    ytdExpectedSpending,
-    isInDebt,
-    debtAmount,
-  } = budgetYtdSummary
+  // API returns: ytdActualIncome, ytdExpectedIncome, ytdTotalSpent, ytdSavings, inDebt
+  const ytdActualIncome = budgetYtdSummary.ytdActualIncome ?? 0
+  const ytdExpectedIncome = budgetYtdSummary.ytdExpectedIncome ?? 0
+  const ytdActualSpending = budgetYtdSummary.ytdTotalSpent ?? 0
+  // Compute expected spending from category breakdown if available
+  const ytdExpectedSpending = Array.isArray(budgetYtdSummary.categoryBreakdown)
+    ? budgetYtdSummary.categoryBreakdown.reduce((sum, c) => sum + (c.expectedYtd || 0), 0)
+    : 0
+  const isInDebt = budgetYtdSummary.inDebt ?? false
+  const debtAmount = isInDebt ? (ytdActualSpending - (ytdActualIncome || ytdExpectedIncome)) : 0
 
   const netSavings = ytdActualIncome - ytdActualSpending
 

@@ -97,7 +97,7 @@ export default function TransactionList({ month }) {
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {transactions.map((txn, i) => {
               const cat = budgetCategories.find(
-                (c) => c.id === txn.budgetCategoryId
+                (c) => c.id === txn.categoryId
               )
               return (
                 <tr key={txn.id || i}>

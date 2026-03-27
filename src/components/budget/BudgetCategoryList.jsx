@@ -9,7 +9,7 @@ export default function BudgetCategoryList({ onEdit }) {
   const currency = budgetConfig?.currency || 'USD'
   const yearlyIncome = budgetConfig?.yearlyIncome || 0
 
-  const totalAllocation = budgetCategories.reduce(
+  const totalAllocation = (budgetCategories || []).reduce(
     (sum, cat) => sum + (cat.percentOfIncome || 0),
     0
   )

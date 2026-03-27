@@ -16,7 +16,7 @@ export default function MonthlyTrendChart() {
   const budgetConfig = useStore((s) => s.budgetConfig)
   const currency = budgetConfig?.currency || 'USD'
 
-  if (budgetMonths.length < 2) {
+  if (!budgetMonths || budgetMonths.length < 2) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
         <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
@@ -39,7 +39,7 @@ export default function MonthlyTrendChart() {
         month: 'short',
         year: '2-digit',
       }),
-      spending: m.totalSpending || 0,
+      spending: m.totalSpent || 0,
       income: m.actualIncome || 0,
     }
   })

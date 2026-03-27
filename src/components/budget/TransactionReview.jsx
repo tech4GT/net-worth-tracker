@@ -16,12 +16,14 @@ export default function TransactionReview({ month }) {
   )
   const [confirming, setConfirming] = useState(false)
 
-  const summary = parsedTransactions?.summary
+  // API returns flat: { month, transactions, detectedIncome }
+  const detectedIncome = parsedTransactions?.detectedIncome ?? 0
+  const totalAmount = transactions.reduce((sum, t) => sum + (t.amount || 0), 0)
 
-  const updateCategory = (tempId, budgetCategoryId) => {
+  const updateCategory = (tempId, categoryId) => {
     setTransactions((prev) =>
       prev.map((t) =>
-        t.tempId === tempId ? { ...t, budgetCategoryId } : t
+        t.tempId === tempId ? { ...t, categoryId } : t
       )
     )
   }
@@ -29,10 +31,9 @@ export default function TransactionReview({ month }) {
   const handleConfirm = async () => {
     setConfirming(true)
     try {
-      const incomeVal = summary?.detectedIncome || 0
       await confirmTransactions({
         month,
-        actualIncome: incomeVal,
+        actualIncome: detectedIncome,
         transactions,
       })
     } catch {
@@ -59,8 +60,8 @@ export default function TransactionReview({ month }) {
           </h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
             {transactions.length} transactions
-            {summary?.totalAmount != null && (
-              <> totaling {formatCurrency(summary.totalAmount, currency)}</>
+            {totalAmount > 0 && (
+              <> totaling {formatCurrency(totalAmount, currency)}</>
             )}
             {lowConfidenceCount > 0 && (
               <span className="text-warning-600 dark:text-warning-400">
@@ -129,12 +130,12 @@ export default function TransactionReview({ month }) {
                 </td>
                 <td className="px-4 py-3">
                   <select
-                    value={txn.budgetCategoryId || ''}
+                    value={txn.categoryId || ''}
                     onChange={(e) => updateCategory(txn.tempId, e.target.value)}
                     className="text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 dark:text-gray-100 px-2 py-1 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
                   >
                     <option value="">Uncategorized</option>
-                    {budgetCategories.map((cat) => (
+                    {(budgetCategories || []).map((cat) => (
                       <option key={cat.id} value={cat.id}>
                         {cat.name}
                       </option>

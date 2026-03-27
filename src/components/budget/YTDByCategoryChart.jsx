@@ -17,7 +17,9 @@ export default function YTDByCategoryChart() {
   const budgetConfig = useStore((s) => s.budgetConfig)
   const currency = budgetConfig?.currency || 'USD'
 
-  if (!budgetYtdSummary || budgetCategories.length === 0) {
+  const categoryBreakdown = budgetYtdSummary?.categoryBreakdown
+
+  if (!budgetYtdSummary || !Array.isArray(categoryBreakdown) || categoryBreakdown.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
         <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
@@ -30,28 +32,18 @@ export default function YTDByCategoryChart() {
     )
   }
 
-  const monthsCompleted = budgetYtdSummary.monthsCompleted || 1
-  const yearlyIncome = budgetYtdSummary.yearlyIncome || budgetConfig?.yearlyIncome || 0
-
-  const data = budgetCategories.map((cat) => {
-    const expectedMonthly = (yearlyIncome * (cat.percentOfIncome || 0)) / 100 / 12
-    const expected = expectedMonthly * monthsCompleted
-    const actual = budgetYtdSummary.ytdTotalActual != null
-      ? (budgetYtdSummary[`cat_${cat.id}`] || 0)
-      : 0
-
-    // Try to pull category totals from ytdSummary if available
-    let categoryActual = 0
-    if (budgetYtdSummary.categoryTotals) {
-      categoryActual = budgetYtdSummary.categoryTotals[cat.id] || 0
-    }
-
+  // API returns categoryBreakdown[] with { categoryId, name, color, expectedYtd, actualYtd, ... }
+  // Also look up color from budgetCategories if not in breakdown
+  const data = categoryBreakdown.map((cb) => {
+    const cat = budgetCategories.find((c) => c.id === cb.categoryId)
+    const expected = cb.expectedYtd || 0
+    const actual = cb.actualYtd || 0
     return {
-      name: cat.name,
-      color: cat.color,
+      name: cb.name || cat?.name || 'Unknown',
+      color: cb.color || cat?.color || '#64748b',
       expected: Math.round(expected * 100) / 100,
-      actual: Math.round(categoryActual * 100) / 100,
-      isOver: categoryActual > expected,
+      actual: Math.round(actual * 100) / 100,
+      isOver: actual > expected,
     }
   }).filter((d) => d.expected > 0 || d.actual > 0)
 

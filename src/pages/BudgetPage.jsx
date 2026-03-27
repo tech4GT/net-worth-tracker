@@ -24,6 +24,12 @@ export default function BudgetPage() {
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [editingCategory, setEditingCategory] = useState(null)
 
+  // Month selector state — must be declared before any early returns (Rules of Hooks)
+  const now = new Date()
+  const [selectedMonth, setSelectedMonth] = useState(
+    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+  )
+
   const budgetConfig = useStore((s) => s.budgetConfig)
   const budgetLoading = useStore((s) => s.budgetLoading)
   const budgetHydrated = useStore((s) => s.budgetHydrated)
@@ -91,13 +97,7 @@ export default function BudgetPage() {
     return <BudgetSetup />
   }
 
-  // Month selector state
-  const now = new Date()
-  const [selectedMonth, setSelectedMonth] = useState(
-    `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  )
-
-  const currentMonthData = budgetMonths.find((m) => m.month === selectedMonth)
+  const currentMonthData = (budgetMonths || []).find((m) => m.month === selectedMonth)
 
   return (
     <div className="space-y-6 max-w-6xl">

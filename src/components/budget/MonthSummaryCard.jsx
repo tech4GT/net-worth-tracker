@@ -8,7 +8,7 @@ export default function MonthSummaryCard({ month }) {
   const deleteMonth = useStore((s) => s.deleteMonth)
   const currency = budgetConfig?.currency || 'USD'
 
-  const monthData = budgetMonths.find((m) => m.month === month)
+  const monthData = (budgetMonths || []).find((m) => m.month === month)
 
   if (!monthData) {
     return (
@@ -21,7 +21,7 @@ export default function MonthSummaryCard({ month }) {
   }
 
   const income = monthData.actualIncome || 0
-  const spending = monthData.totalSpending || 0
+  const spending = monthData.totalSpent || 0
   const net = income - spending
 
   return (
@@ -85,7 +85,7 @@ function CategoryBreakdown({ categoryTotals, currency }) {
 
   const entries = Object.entries(categoryTotals)
     .map(([catId, amount]) => {
-      const cat = budgetCategories.find((c) => c.id === catId)
+      const cat = (budgetCategories || []).find((c) => c.id === catId)
       return {
         name: cat?.name || 'Unknown',
         color: cat?.color || '#64748b',
