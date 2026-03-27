@@ -4,7 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  base: './',
+  base: '/net-worth-tracker/',
   server: {
     proxy: {
       // Yahoo Finance proxy — must come before the general /api proxy

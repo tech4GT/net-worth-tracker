@@ -114,16 +114,16 @@ export default function HistoryPage() {
         {[...sorted].reverse().map((snap, i) => {
           const prevSnap = sorted[sorted.length - 2 - i]
           const change = prevSnap ? snap.netWorth - prevSnap.netWorth : null
-          const expanded = expandedId === snap.id
+          const expanded = expandedId === snap.date
 
           return (
             <div
-              key={snap.id}
+              key={snap.date}
               className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden"
             >
               <div
                 className="p-4 flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
-                onClick={() => setExpandedId(expanded ? null : snap.id)}
+                onClick={() => setExpandedId(expanded ? null : snap.date)}
               >
                 <div>
                   <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
@@ -133,7 +133,7 @@ export default function HistoryPage() {
                     })}
                   </p>
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
-                    {snap.items.length} items
+                    {snap.itemCount} items
                   </p>
                 </div>
                 <div className="flex items-center gap-4">
@@ -151,7 +151,7 @@ export default function HistoryPage() {
                     {formatCurrency(snap.netWorth, snap.baseCurrency)}
                   </span>
                   <button
-                    onClick={(e) => { e.stopPropagation(); setDeleteId(snap.id) }}
+                    onClick={(e) => { e.stopPropagation(); setDeleteId(snap.date) }}
                     className="p-1 text-gray-400 hover:text-danger-500 transition-colors cursor-pointer"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

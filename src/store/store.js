@@ -274,17 +274,17 @@ const useStore = create((set, get) => ({
     }
   },
 
-  deleteSnapshot: async (id) => {
+  deleteSnapshot: async (date) => {
     const state = get()
-    const snapshot = state.snapshots.find((s) => s.id === id)
+    const snapshot = state.snapshots.find((s) => s.date === date)
     if (!snapshot) return
 
     // Optimistic removal
     set((s) => ({
-      snapshots: s.snapshots.filter((snap) => snap.id !== id),
+      snapshots: s.snapshots.filter((snap) => snap.date !== date),
     }))
     try {
-      await api.delete(`/api/snapshots/${snapshot.date}`)
+      await api.delete(`/api/snapshots/${date}`)
       track('snapshot_delete')
     } catch (err) {
       // Rollback
