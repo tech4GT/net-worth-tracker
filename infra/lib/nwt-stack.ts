@@ -67,7 +67,10 @@ export class NwtStack extends cdk.Stack {
     // Grant Bedrock InvokeModel for budget AI features
     fn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
       actions: ['bedrock:InvokeModel'],
-      resources: ['arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku*'],
+      resources: [
+        'arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-haiku*',
+        'arn:aws:bedrock:us:*:inference-profile/us.anthropic.claude-haiku*',
+      ],
     }));
 
     // ---------------------------------------------------------------
