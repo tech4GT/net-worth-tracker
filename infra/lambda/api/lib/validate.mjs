@@ -386,8 +386,9 @@ export function validateConfirmTransactions(body) {
       if (!isNumber(tx.amount) || tx.amount < 0) {
         errors.push(`transactions[${i}].amount is required and must be a non-negative number`);
       }
-      if (!isString(tx.budgetCategoryId) || tx.budgetCategoryId.length === 0) {
-        errors.push(`transactions[${i}].budgetCategoryId is required and must be a non-empty string`);
+      const catId = tx.budgetCategoryId || tx.categoryId;
+      if (!isString(catId) || catId.length === 0) {
+        errors.push(`transactions[${i}].budgetCategoryId or categoryId is required and must be a non-empty string`);
       }
       // date — optional string
       if (tx.date !== undefined && !isString(tx.date)) {
@@ -411,7 +412,8 @@ export function validateConfirmTransactions(body) {
       const cleaned = {
         description: tx.description,
         amount: tx.amount,
-        budgetCategoryId: tx.budgetCategoryId,
+        budgetCategoryId: tx.budgetCategoryId || tx.categoryId,
+        type: tx.type || 'expense',
       };
       if (tx.date !== undefined) cleaned.date = tx.date;
       if (tx.id !== undefined) cleaned.id = tx.id;
