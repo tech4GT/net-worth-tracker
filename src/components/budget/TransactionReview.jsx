@@ -12,7 +12,7 @@ export default function TransactionReview({ month }) {
   const currency = budgetConfig?.currency || 'USD'
 
   const [transactions, setTransactions] = useState(
-    () => (parsedTransactions?.transactions || []).map((t) => ({ ...t, included: true }))
+    () => (parsedTransactions?.transactions || []).map((t) => ({ ...t, included: true, categoryId: t.categoryId || t.budgetCategoryId || '' }))
   )
   const [confirming, setConfirming] = useState(false)
 
