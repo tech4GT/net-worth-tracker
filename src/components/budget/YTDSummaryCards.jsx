@@ -23,16 +23,15 @@ export default function YTDSummaryCards() {
     )
   }
 
-  // API returns: ytdActualIncome, ytdExpectedIncome, ytdTotalSpent, ytdSavings, inDebt
-  const ytdActualIncome = budgetYtdSummary.ytdActualIncome ?? 0
-  const ytdExpectedIncome = budgetYtdSummary.ytdExpectedIncome ?? 0
-  const ytdActualSpending = budgetYtdSummary.ytdTotalSpent ?? 0
-  // Compute expected spending from category breakdown if available
-  const ytdExpectedSpending = Array.isArray(budgetYtdSummary.categoryBreakdown)
-    ? budgetYtdSummary.categoryBreakdown.reduce((sum, c) => sum + (c.expectedYtd || 0), 0)
-    : 0
+  // API returns: { ytdTotals: { actualIncome, expectedIncome, totalSpent, netSavings }, categories: {id: {expectedYtd, actualYtd}}, inDebt }
+  const totals = budgetYtdSummary.ytdTotals || {}
+  const ytdActualIncome = totals.actualIncome ?? 0
+  const ytdExpectedIncome = totals.expectedIncome ?? 0
+  const ytdActualSpending = totals.totalSpent ?? 0
+  const cats = budgetYtdSummary.categories || {}
+  const ytdExpectedSpending = Object.values(cats).reduce((sum, c) => sum + (c.expectedYtd || 0), 0)
   const isInDebt = budgetYtdSummary.inDebt ?? false
-  const debtAmount = isInDebt ? (ytdActualSpending - (ytdActualIncome || ytdExpectedIncome)) : 0
+  const debtAmount = isInDebt ? (ytdActualSpending - ytdActualIncome) : 0
 
   const netSavings = ytdActualIncome - ytdActualSpending
 

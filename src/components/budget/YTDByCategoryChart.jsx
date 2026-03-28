@@ -17,9 +17,11 @@ export default function YTDByCategoryChart() {
   const budgetConfig = useStore((s) => s.budgetConfig)
   const currency = budgetConfig?.currency || 'USD'
 
-  const categoryBreakdown = budgetYtdSummary?.categoryBreakdown
+  // API returns categories as object keyed by id: { [id]: { name, color, expectedYtd, actualYtd, ... } }
+  const categoriesObj = budgetYtdSummary?.categories || {}
+  const categoryEntries = Object.values(categoriesObj)
 
-  if (!budgetYtdSummary || !Array.isArray(categoryBreakdown) || categoryBreakdown.length === 0) {
+  if (!budgetYtdSummary || categoryEntries.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-5">
         <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-4">
@@ -32,10 +34,8 @@ export default function YTDByCategoryChart() {
     )
   }
 
-  // API returns categoryBreakdown[] with { categoryId, name, color, expectedYtd, actualYtd, ... }
-  // Also look up color from budgetCategories if not in breakdown
-  const data = categoryBreakdown.map((cb) => {
-    const cat = budgetCategories.find((c) => c.id === cb.categoryId)
+  const data = categoryEntries.map((cb) => {
+    const cat = (budgetCategories || []).find((c) => c.id === cb.categoryId)
     const expected = cb.expectedYtd || 0
     const actual = cb.actualYtd || 0
     return {
