@@ -1,16 +1,13 @@
 /**
- * Bedrock AI wrapper for parsing bank statements with Claude Haiku.
+ * Anthropic API wrapper for parsing bank statements with Claude Haiku.
  *
- * Uses the AWS SDK v3 Bedrock Runtime client that is pre-installed in the
- * Lambda Node 20 runtime (no npm install needed).
+ * Uses the @anthropic-ai/sdk package with an API key from the
+ * ANTHROPIC_API_KEY environment variable (set via SSM in CDK).
  *
  * Exports a single function: parseStatementWithAI(statementText, categories)
  */
 
-import {
-  BedrockRuntimeClient,
-  InvokeModelCommand,
-} from '@aws-sdk/client-bedrock-runtime';
+import Anthropic from '@anthropic-ai/sdk';
 
 // ---------------------------------------------------------------------------
 // Module-level singleton client (reused across Lambda invocations)
@@ -20,7 +17,9 @@ let _client = null;
 
 function getClient() {
   if (!_client) {
-    _client = new BedrockRuntimeClient({ region: 'us-east-1' });
+    _client = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
   }
   return _client;
 }
@@ -81,7 +80,7 @@ ${statementText}`;
 // ---------------------------------------------------------------------------
 
 /**
- * Parse a bank statement using Claude Haiku on Bedrock.
+ * Parse a bank statement using Claude Haiku via the Anthropic API.
  *
  * @param {string} statementText  Raw bank statement text (CSV or plain text)
  * @param {Array<{id: string, name: string}>} categories  User's budget categories
@@ -91,39 +90,25 @@ export async function parseStatementWithAI(statementText, categories) {
   const client = getClient();
   const prompt = buildPrompt(statementText, categories);
 
-  const requestBody = {
-    anthropic_version: 'bedrock-2023-05-31',
-    max_tokens: 4096,
-    messages: [
-      {
-        role: 'user',
-        content: prompt,
-      },
-    ],
-    temperature: 0,
-  };
-
   try {
-    const command = new InvokeModelCommand({
-      modelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-      contentType: 'application/json',
-      accept: 'application/json',
-      body: JSON.stringify(requestBody),
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 4096,
+      temperature: 0,
+      messages: [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ],
     });
 
-    const response = await client.send(command);
-
-    // Decode the response body
-    const responseBody = JSON.parse(new TextDecoder().decode(response.body));
-
-    // Extract the text content from Claude's response
-    const textContent = responseBody.content?.find((c) => c.type === 'text');
-    if (!textContent || !textContent.text) {
-      console.error('Bedrock response missing text content:', JSON.stringify(responseBody));
+    // Extract text from the Anthropic response format
+    const rawText = (response.content[0].text || '').trim();
+    if (!rawText) {
+      console.error('Anthropic response missing text content:', JSON.stringify(response));
       return { error: 'AI response did not contain text content' };
     }
-
-    const rawText = textContent.text.trim();
 
     // Attempt to parse the JSON response — strip markdown fences if present
     let jsonText = rawText;
@@ -158,7 +143,7 @@ export async function parseStatementWithAI(statementText, categories) {
   } catch (err) {
     console.error('parseStatementWithAI error:', err);
 
-    // Distinguish JSON parse errors from Bedrock/network errors
+    // Distinguish JSON parse errors from API errors
     if (err instanceof SyntaxError) {
       return { error: 'Failed to parse AI response as JSON' };
     }
