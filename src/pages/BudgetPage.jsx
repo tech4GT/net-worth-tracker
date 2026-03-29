@@ -23,6 +23,7 @@ export default function BudgetPage() {
   const [activeTab, setActiveTab] = useState('dashboard')
   const [showCategoryForm, setShowCategoryForm] = useState(false)
   const [editingCategory, setEditingCategory] = useState(null)
+  const [editingBudget, setEditingBudget] = useState(false)
 
   // Month selector state — must be declared before any early returns (Rules of Hooks)
   const now = new Date()
@@ -38,6 +39,7 @@ export default function BudgetPage() {
   const loadYtdSummary = useStore((s) => s.loadYtdSummary)
   const parsedTransactions = useStore((s) => s.parsedTransactions)
   const budgetMonths = useStore((s) => s.budgetMonths)
+  const budgetCategories = useStore((s) => s.budgetCategories)
 
   // Load budget data on mount
   useEffect(() => {
@@ -93,8 +95,14 @@ export default function BudgetPage() {
     )
   }
 
-  if (!budgetConfig) {
-    return <BudgetSetup />
+  if (!budgetConfig || editingBudget) {
+    return (
+      <BudgetSetup
+        initialConfig={editingBudget ? budgetConfig : null}
+        initialCategories={editingBudget ? budgetCategories : null}
+        onCancel={editingBudget ? () => setEditingBudget(false) : null}
+      />
+    )
   }
 
   const currentMonthData = (budgetMonths || []).find((m) => m.month === selectedMonth)
@@ -102,7 +110,7 @@ export default function BudgetPage() {
   return (
     <div className="space-y-6 max-w-6xl">
       {/* Tab bar */}
-      <div className="border-b border-gray-200 dark:border-gray-800">
+      <div className="border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
         <nav className="flex gap-6">
           {TABS.map((tab) => (
             <button
@@ -118,6 +126,15 @@ export default function BudgetPage() {
             </button>
           ))}
         </nav>
+        <button
+          onClick={() => setEditingBudget(true)}
+          className="pb-3 text-sm text-gray-500 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors cursor-pointer flex items-center gap-1.5"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          Edit Budget
+        </button>
       </div>
 
       {/* Dashboard tab */}

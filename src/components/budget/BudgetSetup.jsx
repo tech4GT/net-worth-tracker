@@ -5,11 +5,14 @@ import Button from '../ui/Button'
 import Input from '../ui/Input'
 import Select from '../ui/Select'
 
-export default function BudgetSetup() {
+export default function BudgetSetup({ initialConfig = null, initialCategories = null, onCancel = null }) {
   const saveBudgetConfig = useStore((s) => s.saveBudgetConfig)
   const addBudgetCategory = useStore((s) => s.addBudgetCategory)
+  const deleteBudgetCategory = useStore((s) => s.deleteBudgetCategory)
   const loadBudgetData = useStore((s) => s.loadBudgetData)
   const validateBudgetCategories = useStore((s) => s.validateBudgetCategories)
+
+  const isEditing = !!initialConfig
 
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
@@ -17,24 +20,38 @@ export default function BudgetSetup() {
   const [validationIssues, setValidationIssues] = useState(null)
   const [skipValidation, setSkipValidation] = useState(false)
 
-  // Step 1: Config
+  // Step 1: Config — pre-fill from existing config if editing
   const currentYear = new Date().getFullYear()
-  const [incomeInput, setIncomeInput] = useState('')
-  const [incomePeriod, setIncomePeriod] = useState('yearly') // 'yearly' | 'monthly'
-  const [year, setYear] = useState(String(currentYear))
-  const [currency, setCurrency] = useState('GBP')
+  const [incomeInput, setIncomeInput] = useState(
+    initialConfig ? String(initialConfig.yearlyIncome || '') : ''
+  )
+  const [incomePeriod, setIncomePeriod] = useState('yearly')
+  const [year, setYear] = useState(
+    initialConfig ? String(initialConfig.year) : String(currentYear)
+  )
+  const [currency, setCurrency] = useState(
+    initialConfig?.currency || 'GBP'
+  )
 
   const yearlyIncome = incomePeriod === 'monthly'
     ? (Number(incomeInput) || 0) * 12
     : (Number(incomeInput) || 0)
   const monthlyIncome = yearlyIncome / 12
 
-  // Step 2: Categories
-  const [budgetMode, setBudgetMode] = useState('percentage') // 'percentage' | 'amount'
-  const [amountPeriod, setAmountPeriod] = useState('monthly') // 'monthly' | 'yearly' — for amount mode
-  const [categories, setCategories] = useState(
-    DEFAULT_BUDGET_CATEGORIES.map((c) => ({ ...c, included: true, description: '' }))
-  )
+  // Step 2: Categories — pre-fill from existing categories if editing
+  const [budgetMode, setBudgetMode] = useState('percentage')
+  const [amountPeriod, setAmountPeriod] = useState('monthly')
+  const [categories, setCategories] = useState(() => {
+    if (initialCategories && initialCategories.length > 0) {
+      return initialCategories.map((c) => ({
+        ...c,
+        included: true,
+        description: c.description || '',
+        isExisting: true,
+      }))
+    }
+    return DEFAULT_BUDGET_CATEGORIES.map((c) => ({ ...c, included: true, description: '' }))
+  })
   const [newName, setNewName] = useState('')
   const [newValue, setNewValue] = useState('')
 
@@ -152,16 +169,39 @@ export default function BudgetSetup() {
         year: Number(year),
         currency,
       })
-      for (const cat of included) {
-        await addBudgetCategory({
-          name: cat.name,
-          color: cat.color,
-          icon: cat.icon,
-          percentOfIncome: cat.percentOfIncome,
-          ...(cat.description ? { description: cat.description } : {}),
-        })
+
+      if (isEditing) {
+        // Delete categories that were removed or unchecked
+        const removedCats = (initialCategories || []).filter(
+          (orig) => !included.some((c) => c.id === orig.id)
+        )
+        for (const cat of removedCats) {
+          try { await deleteBudgetCategory(cat.id) } catch { /* ignore */ }
+        }
+        // Update existing + create new
+        for (const cat of included) {
+          await addBudgetCategory({
+            name: cat.name,
+            color: cat.color,
+            icon: cat.icon,
+            percentOfIncome: cat.percentOfIncome,
+            ...(cat.description ? { description: cat.description } : {}),
+          })
+        }
+      } else {
+        for (const cat of included) {
+          await addBudgetCategory({
+            name: cat.name,
+            color: cat.color,
+            icon: cat.icon,
+            percentOfIncome: cat.percentOfIncome,
+            ...(cat.description ? { description: cat.description } : {}),
+          })
+        }
       }
+
       await loadBudgetData()
+      if (onCancel) onCancel() // Exit edit mode
     } catch {
       // Errors handled by store
     } finally {
@@ -183,7 +223,7 @@ export default function BudgetSetup() {
             </svg>
           </div>
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
-            {step === 1 ? 'Set Up Your Budget' : 'Customize Categories'}
+            {step === 1 ? (isEditing ? 'Edit Your Budget' : 'Set Up Your Budget') : 'Customize Categories'}
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
             {step === 1
@@ -275,6 +315,14 @@ export default function BudgetSetup() {
             >
               Next: Choose Categories
             </Button>
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                className="w-full text-center text-sm text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 mt-2 cursor-pointer"
+              >
+                Cancel
+              </button>
+            )}
           </div>
         )}
 
