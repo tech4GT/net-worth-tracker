@@ -16,6 +16,7 @@ export default function BudgetSetup({ initialConfig = null, initialCategories = 
 
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
+  const [allocationError, setAllocationError] = useState(null)
   const [validating, setValidating] = useState(false)
   const [validationIssues, setValidationIssues] = useState(null)
   const [skipValidation, setSkipValidation] = useState(false)
@@ -142,6 +143,22 @@ export default function BudgetSetup({ initialConfig = null, initialCategories = 
 
   const handleFinish = async () => {
     const included = categories.filter((c) => c.included)
+    setAllocationError(null)
+
+    // Check total allocation = 100%
+    const total = Math.round(included.reduce((sum, c) => sum + c.percentOfIncome, 0) * 10) / 10
+    if (total > 100) {
+      setAllocationError(`Your categories add up to ${total}%. Please reduce some allocations to total exactly 100%.`)
+      return
+    }
+    if (total < 100) {
+      const savingsCat = included.find((c) => /sav|invest/i.test(c.name))
+      const suggestion = savingsCat
+        ? ` Consider adding the remaining ${Math.round((100 - total) * 10) / 10}% to "${savingsCat.name}".`
+        : ` Consider adding a savings category or distributing the remaining ${Math.round((100 - total) * 10) / 10}%.`
+      setAllocationError(`Your categories add up to ${total}%.${suggestion} Allocations must total 100%.`)
+      return
+    }
 
     // Run AI validation unless the user chose to skip
     if (!skipValidation) {
@@ -579,10 +596,10 @@ export default function BudgetSetup({ initialConfig = null, initialCategories = 
               </Button>
             </div>
 
-            {Math.round(totalPercent) !== 100 && (
-              <p className="text-xs text-center text-warning-600 dark:text-warning-400">
-                Tip: Allocations don't need to total exactly 100%, but it helps with tracking.
-              </p>
+            {allocationError && (
+              <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-3">
+                <p className="text-sm text-danger-700 dark:text-danger-300">{allocationError}</p>
+              </div>
             )}
           </div>
         )}
