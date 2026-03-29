@@ -51,9 +51,15 @@ function jsonResponse(statusCode, body) {
 // ---------------------------------------------------------------------------
 
 export async function handler(event) {
-  // Handle async Lambda invocations (not via API Gateway)
-  if (event.asyncAction === 'process-statement') {
-    return await handleProcessStatementAsync(event);
+  // Handle SQS events (async statement processing)
+  if (event.Records && event.Records[0]?.eventSource === 'aws:sqs') {
+    for (const record of event.Records) {
+      const body = JSON.parse(record.body);
+      if (body.asyncAction === 'process-statement') {
+        await handleProcessStatementAsync(body);
+      }
+    }
+    return;
   }
 
   try {

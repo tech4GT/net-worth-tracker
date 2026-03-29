@@ -8,6 +8,7 @@ import * as logs from "aws-cdk-lib/aws-logs";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as cw_actions from "aws-cdk-lib/aws-cloudwatch-actions";
+import * as lambda_events from "aws-cdk-lib/aws-lambda-event-sources";
 import * as path from "path";
 import {
   CorsHttpMethod,
@@ -70,12 +71,22 @@ export class NwtStack extends cdk.Stack {
     );
     fn.addEnvironment('ANTHROPIC_API_KEY', anthropicApiKey);
 
-    // Grant Lambda permission to invoke itself (for async statement processing)
-    // Using addToRolePolicy instead of grantInvoke(fn) to avoid circular dependency
-    fn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
-      actions: ['lambda:InvokeFunction'],
-      resources: [fn.functionArn],
+    // SQS queue for async statement processing (Lambda triggered by queue, not API Gateway)
+    const dlq = new cdk.aws_sqs.Queue(this, "StatementProcessingDLQ", {
+      retentionPeriod: cdk.Duration.days(7),
+    });
+    const processingQueue = new cdk.aws_sqs.Queue(this, "StatementProcessingQueue", {
+      visibilityTimeout: cdk.Duration.seconds(120), // 2x Lambda timeout
+      deadLetterQueue: { queue: dlq, maxReceiveCount: 2 },
+    });
+    // Lambda reads from the queue
+    fn.addEventSource(new lambda_events.SqsEventSource(processingQueue, {
+      batchSize: 1, // process one statement at a time
     }));
+    // Lambda needs to send messages to the queue (from submit endpoint)
+    processingQueue.grantSendMessages(fn);
+    // Export queue URL as env var so Lambda can send to it
+    fn.addEnvironment('PROCESSING_QUEUE_URL', processingQueue.queueUrl);
 
     // ---------------------------------------------------------------
     // Cognito User Pool

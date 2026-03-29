@@ -15,7 +15,7 @@
  */
 
 import crypto from 'node:crypto';
-import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
+import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
 import { getItem, putItem, updateItem, deleteItem, queryByPrefix, batchWrite } from '../lib/db.mjs';
 import {
   parseBody,
@@ -25,7 +25,7 @@ import {
 } from '../lib/validate.mjs';
 import { parseStatementWithAI, validateCategoriesWithAI } from '../lib/ai.mjs';
 
-const lambdaClient = new LambdaClient({});
+const sqsClient = new SQSClient({});
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MAX_STATEMENT_BYTES = 100 * 1024; // 100 KB
@@ -995,18 +995,16 @@ export async function handleSubmitStatement(event, userId) {
       createdAt: now,
     });
 
-    // --- Invoke this Lambda asynchronously to process the statement ---
-    const functionName = process.env.AWS_LAMBDA_FUNCTION_NAME;
-    const invokeCmd = new InvokeCommand({
-      FunctionName: functionName,
-      InvocationType: 'Event', // async — returns immediately
-      Payload: JSON.stringify({
+    // --- Send message to SQS for async processing ---
+    const queueUrl = process.env.PROCESSING_QUEUE_URL;
+    await sqsClient.send(new SendMessageCommand({
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify({
         asyncAction: 'process-statement',
         userId,
         jobId,
       }),
-    });
-    await lambdaClient.send(invokeCmd);
+    }));
 
     return {
       statusCode: 202,
