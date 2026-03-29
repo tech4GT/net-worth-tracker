@@ -522,20 +522,23 @@ export default function BudgetSetup({ initialConfig = null, initialCategories = 
                         </button>
                       )}
                     </div>
-                    {issue && (
+                    {cat.included && (
                       <div className="ml-10 mt-1 space-y-1">
-                        <p className="text-xs text-danger-500">{issue.reason}</p>
+                        {issue && (
+                          <p className="text-xs text-danger-500">{issue.reason}</p>
+                        )}
                         <input
                           type="text"
-                          placeholder="Add a description to clarify this category (e.g., 'Monthly rent and mortgage payments')"
+                          placeholder="Optional: describe what goes here (e.g., 'Monthly rent, mortgage, home repairs')"
                           value={cat.description || ''}
                           onChange={(e) => updateDescription(cat.id, e.target.value)}
-                          className="w-full text-xs bg-white dark:bg-gray-800 border border-danger-300 dark:border-danger-600 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                          className={`w-full text-xs bg-white dark:bg-gray-800 border rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500 text-gray-900 dark:text-gray-100 placeholder-gray-400 ${
+                            issue
+                              ? 'border-danger-300 dark:border-danger-600'
+                              : 'border-gray-200 dark:border-gray-700'
+                          }`}
                         />
                       </div>
-                    )}
-                    {!issue && cat.description && (
-                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-10 italic">{cat.description}</p>
                     )}
                   </div>
                 )
