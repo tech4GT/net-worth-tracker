@@ -1331,6 +1331,22 @@ function handleParseStatement(body) {
     });
   }
 
+  // --- Apply learning context to improve categorization ---
+  const learnRecord = dbGetItem('BUDGETLEARN');
+  if (learnRecord && Array.isArray(learnRecord.examples)) {
+    for (const tx of transactions) {
+      const lowerDesc = tx.description.toLowerCase();
+      // Check if any learning example pattern matches this transaction
+      for (const ex of learnRecord.examples) {
+        if (lowerDesc.includes(ex.pattern.toLowerCase()) || ex.pattern.toLowerCase().includes(lowerDesc)) {
+          tx.categoryId = ex.categoryId;
+          tx.confidence = 0.95;
+          break;
+        }
+      }
+    }
+  }
+
   // Use client-provided income if present, otherwise use detected
   const finalIncome = body.actualIncome != null ? body.actualIncome : detectedIncome;
 
@@ -1400,6 +1416,53 @@ function handleConfirmTransactions(body) {
     result = dbUpdateItem(`BMONTH#${body.month}`, monthData);
   } else {
     result = dbPutItem(`BMONTH#${body.month}`, monthData);
+  }
+
+  // --- Update classification learning context ---
+  try {
+    // Build category name lookup
+    const bcatRecords = dbQueryByPrefix('BCAT#');
+    const catNameMap = {};
+    for (const r of bcatRecords) {
+      const catId = r.id || r.SK.slice(5);
+      catNameMap[catId] = r.name;
+    }
+
+    // Extract learning examples from confirmed transactions (expenses and refunds only)
+    const newExamples = body.transactions
+      .filter((tx) => {
+        const type = tx.type || 'expense';
+        return type === 'expense' || type === 'refund';
+      })
+      .map((tx) => ({
+        pattern: tx.description || '',
+        categoryId: tx.budgetCategoryId || tx.categoryId || 'bcat-other',
+        categoryName: catNameMap[tx.budgetCategoryId || tx.categoryId] || 'Other',
+        type: tx.type || 'expense',
+      }))
+      .filter((ex) => ex.pattern.trim().length > 0);
+
+    if (newExamples.length > 0) {
+      const learnRecord = dbGetItem('BUDGETLEARN');
+      const existingExamples = (learnRecord && learnRecord.examples) || [];
+
+      // Merge: index existing by lowercase pattern, then overlay new examples
+      const exampleMap = new Map();
+      for (const ex of existingExamples) {
+        exampleMap.set(ex.pattern.toLowerCase(), ex);
+      }
+      for (const ex of newExamples) {
+        exampleMap.set(ex.pattern.toLowerCase(), ex);
+      }
+
+      // Cap at 100 examples — keep most recent
+      const merged = Array.from(exampleMap.values());
+      const capped = merged.length > 100 ? merged.slice(merged.length - 100) : merged;
+
+      dbPutItem('BUDGETLEARN', { examples: capped });
+    }
+  } catch (learnErr) {
+    console.error('Failed to update learning context:', learnErr);
   }
 
   const cleaned = stripKeys(result);

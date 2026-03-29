@@ -492,6 +492,53 @@ export async function handleConfirmTransactions(event, userId) {
       result = await putItem(userId, `BMONTH#${month}`, monthData);
     }
 
+    // --- Update classification learning context ---
+    try {
+      // Build a category name lookup from BCAT# records
+      const bcatRecords = await queryByPrefix(userId, 'BCAT#');
+      const catNameMap = {};
+      for (const r of bcatRecords) {
+        catNameMap[r.id || r.SK.slice(5)] = r.name;
+      }
+
+      // Extract learning examples from confirmed transactions (expenses and refunds only)
+      const newExamples = transactions
+        .filter((tx) => {
+          const type = tx.type || 'expense';
+          return type === 'expense' || type === 'refund';
+        })
+        .map((tx) => ({
+          pattern: tx.description,
+          categoryId: tx.budgetCategoryId || tx.categoryId,
+          categoryName: catNameMap[tx.budgetCategoryId || tx.categoryId] || 'Other',
+          type: tx.type || 'expense',
+        }))
+        .filter((ex) => ex.pattern && ex.pattern.trim().length > 0);
+
+      if (newExamples.length > 0) {
+        const learnRecord = await getItem(userId, 'BUDGETLEARN');
+        const existingExamples = (learnRecord && learnRecord.examples) || [];
+
+        // Merge: index existing by lowercase pattern, then overlay new examples
+        const exampleMap = new Map();
+        for (const ex of existingExamples) {
+          exampleMap.set(ex.pattern.toLowerCase(), ex);
+        }
+        for (const ex of newExamples) {
+          exampleMap.set(ex.pattern.toLowerCase(), ex);
+        }
+
+        // Cap at 100 examples — keep most recent (new entries are last in map iteration)
+        const merged = Array.from(exampleMap.values());
+        const capped = merged.length > 100 ? merged.slice(merged.length - 100) : merged;
+
+        await putItem(userId, 'BUDGETLEARN', { examples: capped });
+      }
+    } catch (learnErr) {
+      // Non-fatal — log but don't fail the confirm
+      console.error('Failed to update learning context:', learnErr);
+    }
+
     return {
       statusCode: 200,
       headers: JSON_HEADERS,
@@ -777,11 +824,16 @@ export async function handleParseStatement(event, userId) {
       };
     }
 
-    // --- Query user's budget categories from DynamoDB ---
-    const catItems = await queryByPrefix(userId, 'BCAT#');
+    // --- Query user's budget categories and learning context from DynamoDB ---
+    const [catItems, learnRecord] = await Promise.all([
+      queryByPrefix(userId, 'BCAT#'),
+      getItem(userId, 'BUDGETLEARN'),
+    ]);
+
     const categories = catItems.map((item) => ({
       id: item.id,
       name: item.name,
+      description: item.description || undefined,
     }));
 
     // If user has no budget categories, return an informative error
@@ -795,8 +847,11 @@ export async function handleParseStatement(event, userId) {
       };
     }
 
+    // Extract learning examples (if any)
+    const learningExamples = (learnRecord && learnRecord.examples) || [];
+
     // --- Call AI to parse the statement ---
-    const result = await parseStatementWithAI(body.statementText, categories);
+    const result = await parseStatementWithAI(body.statementText, categories, learningExamples);
 
     // Check for AI error
     if (result.error) {

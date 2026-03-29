@@ -5,7 +5,7 @@
  * ANTHROPIC_API_KEY environment variable (set via SSM in CDK).
  *
  * Exports:
- *   - parseStatementWithAI(statementText, categories)
+ *   - parseStatementWithAI(statementText, categories, learningExamples?)
  *   - validateCategoriesWithAI(categories)
  */
 
@@ -30,7 +30,7 @@ function getClient() {
 // Prompt construction
 // ---------------------------------------------------------------------------
 
-function buildPrompt(statementText, categories) {
+function buildPrompt(statementText, categories, learningExamples) {
   const categoryList = categories
     .map((c) => {
       let s = `  - id: "${c.id}", name: "${c.name}"`;
@@ -39,11 +39,20 @@ function buildPrompt(statementText, categories) {
     })
     .join('\n');
 
+  // Build optional sections
+  let learningSection = '';
+  if (Array.isArray(learningExamples) && learningExamples.length > 0) {
+    const exampleLines = learningExamples
+      .map((ex) => `  - "${ex.pattern}" → ${ex.categoryName} (${ex.categoryId})`)
+      .join('\n');
+    learningSection = `\nPREVIOUS CLASSIFICATIONS (learn from these — classify similar transactions the same way):\n${exampleLines}\n`;
+  }
+
   return `You are a bank statement parser. Your job is to extract individual spending transactions from a raw bank statement and categorize each one.
 
 AVAILABLE BUDGET CATEGORIES:
 ${categoryList}
-
+${learningSection}
 RULES:
 1. Include ALL transactions — spending, refunds, and income. Classify each with a "type" field:
    - "expense": normal spending/outflow (amount is positive)
@@ -89,12 +98,13 @@ ${statementText}`;
  * Parse a bank statement using Claude Haiku via the Anthropic API.
  *
  * @param {string} statementText  Raw bank statement text (CSV or plain text)
- * @param {Array<{id: string, name: string}>} categories  User's budget categories
+ * @param {Array<{id: string, name: string, description?: string}>} categories  User's budget categories
+ * @param {Array<{pattern: string, categoryId: string, categoryName: string, type: string}>} [learningExamples]  Previous classification examples for learning
  * @returns {Promise<{transactions: Array, detectedIncome: number|null} | {error: string}>}
  */
-export async function parseStatementWithAI(statementText, categories) {
+export async function parseStatementWithAI(statementText, categories, learningExamples) {
   const client = getClient();
-  const prompt = buildPrompt(statementText, categories);
+  const prompt = buildPrompt(statementText, categories, learningExamples);
 
   try {
     const response = await client.messages.create({
