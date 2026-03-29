@@ -1,9 +1,10 @@
 name: Deploy
 
 on:
-  push:
-    branches: [master]
   workflow_dispatch:
+  # Auto-deploy on push disabled — deploying manually via CLI
+  # push:
+  #   branches: [master]
 
 permissions:
   id-token: write
