@@ -41,6 +41,7 @@ const useStore = create((set, get) => ({
   parsedTransactions: null,
   parsingStatement: false,
   parsingProgress: null, // { current: number, total: number } during chunked parsing
+  processingJobId: null, // jobId when a statement is being processed async
 
   // --- Initial load ---
   loadUserData: async () => {
@@ -571,50 +572,41 @@ const useStore = create((set, get) => ({
     }
   },
 
-  parseStatement: async ({ month, statementText, actualIncome }) => {
-    const CHUNK_SIZE = 150 // lines per chunk
-    const lines = statementText.split('\n').filter((l) => l.trim().length > 0)
-    const chunks = []
-    for (let i = 0; i < lines.length; i += CHUNK_SIZE) {
-      chunks.push(lines.slice(i, i + CHUNK_SIZE).join('\n'))
-    }
-
-    set({ parsingStatement: true, parsingProgress: { current: 0, total: chunks.length } })
-
+  submitStatement: async ({ month, statementText, actualIncome }) => {
+    set({ parsingStatement: true, parsingProgress: null, processingJobId: null })
     try {
-      const allTransactions = []
-      let totalDetectedIncome = 0
-
-      for (let i = 0; i < chunks.length; i++) {
-        set({ parsingProgress: { current: i + 1, total: chunks.length } })
-        const result = await api.post('/api/budget/parse-statement', {
-          month,
-          statementText: chunks[i],
-          actualIncome: i === 0 ? actualIncome : undefined,
-        })
-        if (result.transactions) {
-          allTransactions.push(...result.transactions)
-        }
-        if (result.detectedIncome) {
-          totalDetectedIncome += result.detectedIncome
-        }
-      }
-
-      const merged = {
-        month,
-        transactions: allTransactions,
-        detectedIncome: totalDetectedIncome || null,
-      }
-
-      set({ parsedTransactions: merged, parsingStatement: false, parsingProgress: null })
-      track('budget_parse_statement')
-      return merged
+      const result = await api.post('/api/budget/submit-statement', {
+        month, statementText, actualIncome,
+      })
+      set({ processingJobId: result.jobId, parsingStatement: false })
+      toastSuccess('Statement submitted for processing')
+      track('budget_submit_statement')
+      return result
     } catch (err) {
-      set({ parsingStatement: false, parsingProgress: null })
+      set({ parsingStatement: false })
       const msg = err?.message || 'Unknown error'
-      toastError(`Failed to parse statement: ${msg}`)
+      toastError(`Failed to submit statement: ${msg}`)
       throw err
     }
+  },
+
+  pollJobStatus: async (jobId) => {
+    const result = await api.get(`/api/budget/job-status?jobId=${jobId}`)
+    if (result.status === 'completed') {
+      set({
+        parsedTransactions: {
+          month: result.month,
+          transactions: result.transactions || [],
+          detectedIncome: result.detectedIncome,
+        },
+        processingJobId: null,
+      })
+      track('budget_parse_statement')
+    } else if (result.status === 'failed') {
+      set({ processingJobId: null })
+      toastError(`Statement processing failed: ${result.error || 'Unknown error'}`)
+    }
+    return result
   },
 
   confirmTransactions: async ({ month, actualIncome, transactions }) => {

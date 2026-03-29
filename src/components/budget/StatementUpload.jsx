@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import useStore from '../../store/store'
 import Button from '../ui/Button'
 import Input from '../ui/Input'
@@ -25,9 +25,8 @@ async function extractPdfText(file) {
     let lastY = null
 
     for (const item of items) {
-      const y = Math.round(item.transform[5]) // Y coordinate
+      const y = Math.round(item.transform[5])
       if (lastY !== null && Math.abs(y - lastY) > 3) {
-        // Y changed — new line
         lines.push(currentLine.join(' '))
         currentLine = []
       }
@@ -38,22 +37,78 @@ async function extractPdfText(file) {
       lines.push(currentLine.join(' '))
     }
 
-    pages.push(lines.join('\n'))
+    // Merge amount-only lines with the preceding line
+    // Bank PDFs often put amounts on a separate row from the description
+    const merged = []
+    for (let j = 0; j < lines.length; j++) {
+      const line = lines[j].trim()
+      // Check if this line is just a number (amount) — e.g. "1,234.56" or "£1,234.56"
+      if (/^[£$€]?[\d,]+\.\d{2}$/.test(line.replace(/\s/g, ''))) {
+        // Append to previous line
+        if (merged.length > 0) {
+          merged[merged.length - 1] += ' ' + line
+        } else {
+          merged.push(line)
+        }
+      } else {
+        merged.push(line)
+      }
+    }
+
+    pages.push(merged.join('\n'))
   }
 
   return pages.join('\n')
 }
 
+const POLL_INTERVAL_MS = 5000
+
 export default function StatementUpload({ month }) {
-  const parseStatement = useStore((s) => s.parseStatement)
+  const submitStatement = useStore((s) => s.submitStatement)
+  const pollJobStatus = useStore((s) => s.pollJobStatus)
   const parsingStatement = useStore((s) => s.parsingStatement)
-  const parsingProgress = useStore((s) => s.parsingProgress)
+  const processingJobId = useStore((s) => s.processingJobId)
 
   const [income, setIncome] = useState('')
   const [fileName, setFileName] = useState('')
   const [fileText, setFileText] = useState('')
   const [extracting, setExtracting] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const fileRef = useRef(null)
+  const pollTimerRef = useRef(null)
+
+  // Start polling when we have a processingJobId
+  const startPolling = useCallback((jobId) => {
+    // Clear any existing timer
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current)
+    }
+
+    pollTimerRef.current = setInterval(async () => {
+      try {
+        const result = await pollJobStatus(jobId)
+        if (result.status === 'completed' || result.status === 'failed') {
+          clearInterval(pollTimerRef.current)
+          pollTimerRef.current = null
+        }
+      } catch {
+        // Network error during poll — keep trying
+      }
+    }, POLL_INTERVAL_MS)
+  }, [pollJobStatus])
+
+  // Resume polling if component mounts with an active processingJobId
+  useEffect(() => {
+    if (processingJobId) {
+      startPolling(processingJobId)
+    }
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current)
+        pollTimerRef.current = null
+      }
+    }
+  }, [processingJobId, startPolling])
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0]
@@ -85,18 +140,25 @@ export default function StatementUpload({ month }) {
 
   const handleParse = async () => {
     if (!fileText) return
+    setSubmitting(true)
     try {
-      await parseStatement({
+      const result = await submitStatement({
         month,
         statementText: fileText,
         actualIncome: income ? Number(income) : undefined,
       })
+      // Start polling for the new job
+      if (result?.jobId) {
+        startPolling(result.jobId)
+      }
     } catch {
       // Error handled by store
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const isProcessing = parsingStatement || extracting
+  const isProcessing = parsingStatement || extracting || submitting || !!processingJobId
 
   return (
     <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
@@ -121,9 +183,11 @@ export default function StatementUpload({ month }) {
             onClick={() => fileRef.current?.click()}
             disabled={isProcessing}
             className={`w-full border-2 border-dashed rounded-xl p-8 text-center transition-colors cursor-pointer ${
-              fileName
-                ? 'border-primary-300 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20'
-                : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
+              isProcessing
+                ? 'opacity-60 cursor-not-allowed border-gray-300 dark:border-gray-600'
+                : fileName
+                  ? 'border-primary-300 dark:border-primary-700 bg-primary-50 dark:bg-primary-900/20'
+                  : 'border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500'
             }`}
           >
             {extracting ? (
@@ -165,14 +229,34 @@ export default function StatementUpload({ month }) {
         </div>
 
         {/* Warnings */}
-        {fileName && fileText && fileText.length > 80000 && (
+        {fileName && fileText && fileText.length > 80000 && !processingJobId && (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-sm text-amber-700 dark:text-amber-300">
-            Large statement ({Math.round(fileText.length / 1024)}KB). This will be processed in multiple chunks and may take longer.
+            Large statement ({Math.round(fileText.length / 1024)}KB). Processing may take a bit longer.
           </div>
         )}
         {fileName && !extracting && !fileText && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-700 dark:text-red-300">
             Could not extract text from this file. Try a different format (CSV or TXT) or a different PDF.
+          </div>
+        )}
+
+        {/* Processing status message */}
+        {processingJobId && (
+          <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-blue-500 animate-spin flex-shrink-0" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              <div>
+                <p className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                  Processing your statement...
+                </p>
+                <p className="text-xs text-blue-500 dark:text-blue-400 mt-0.5">
+                  This usually takes 30-60 seconds. You can navigate away and come back.
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
@@ -185,6 +269,7 @@ export default function StatementUpload({ month }) {
           placeholder="e.g. 5000"
           value={income}
           onChange={(e) => setIncome(e.target.value)}
+          disabled={!!processingJobId}
         />
 
         {/* Parse button */}
@@ -193,26 +278,34 @@ export default function StatementUpload({ month }) {
           onClick={handleParse}
           disabled={isProcessing || !fileText}
         >
-          {isProcessing ? (
+          {extracting ? (
             <span className="flex items-center gap-2">
               <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              {extracting ? 'Extracting PDF...' : parsingProgress ? `Parsing chunk ${parsingProgress.current} of ${parsingProgress.total}...` : 'Parsing Statement...'}
+              Extracting PDF...
+            </span>
+          ) : submitting ? (
+            <span className="flex items-center gap-2">
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Submitting...
+            </span>
+          ) : processingJobId ? (
+            <span className="flex items-center gap-2">
+              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Processing... (check back in a moment)
             </span>
           ) : (
             'Parse Statement'
           )}
         </Button>
-        {parsingStatement && parsingProgress && parsingProgress.total > 1 && (
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-2">
-            <div
-              className="bg-primary-500 h-2 rounded-full transition-all"
-              style={{ width: `${(parsingProgress.current / parsingProgress.total) * 100}%` }}
-            />
-          </div>
-        )}
       </div>
     </div>
   )

@@ -15,6 +15,7 @@
  */
 
 import crypto from 'node:crypto';
+import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import { getItem, putItem, updateItem, deleteItem, queryByPrefix, batchWrite } from '../lib/db.mjs';
 import {
   parseBody,
@@ -23,6 +24,8 @@ import {
   validateConfirmTransactions,
 } from '../lib/validate.mjs';
 import { parseStatementWithAI, validateCategoriesWithAI } from '../lib/ai.mjs';
+
+const lambdaClient = new LambdaClient({});
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MAX_STATEMENT_BYTES = 100 * 1024; // 100 KB
@@ -897,6 +900,284 @@ export async function handleParseStatement(event, userId) {
       headers: JSON_HEADERS,
       body: JSON.stringify({ error: 'Failed to parse statement' }),
     };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/budget/submit-statement
+// ---------------------------------------------------------------------------
+
+/**
+ * Submit a bank statement for async AI processing. Stores the statement text,
+ * triggers an async Lambda invocation to process it, and returns a jobId
+ * that the client can poll for completion.
+ *
+ * Body: { month: "YYYY-MM", statementText: "...", actualIncome?: number }
+ *
+ * @param {import("aws-lambda").APIGatewayProxyEventV2} event
+ * @param {string} userId
+ */
+export async function handleSubmitStatement(event, userId) {
+  try {
+    const body = parseBody(event);
+    if (!body) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'Invalid or missing request body' }),
+      };
+    }
+
+    // --- Validate month ---
+    if (!body.month || typeof body.month !== 'string' || !MONTH_RE.test(body.month)) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'month is required and must be in YYYY-MM format' }),
+      };
+    }
+
+    // --- Validate statementText ---
+    if (!body.statementText || typeof body.statementText !== 'string') {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'statementText is required and must be a non-empty string' }),
+      };
+    }
+
+    const textBytes = new TextEncoder().encode(body.statementText).length;
+    if (textBytes > MAX_STATEMENT_BYTES) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          error: `statementText exceeds maximum size of ${MAX_STATEMENT_BYTES / 1024}KB`,
+        }),
+      };
+    }
+
+    // --- Check for existing active job ---
+    const existingJobs = await queryByPrefix(userId, 'BUDGETJOB#');
+    const activeJob = existingJobs.find((j) => j.status === 'processing');
+    if (activeJob) {
+      return {
+        statusCode: 409,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({
+          error: 'A statement is already being processed',
+          jobId: activeJob.jobId,
+        }),
+      };
+    }
+
+    // --- Clean up old completed/failed jobs ---
+    const tableName = process.env.TABLE_NAME;
+    const oldJobs = existingJobs.filter((j) => j.status !== 'processing');
+    if (oldJobs.length > 0) {
+      const deleteOps = oldJobs.map((j) => ({
+        DeleteRequest: {
+          Key: { PK: `USER#${userId}`, SK: j.SK || `BUDGETJOB#${j.jobId}` },
+        },
+      }));
+      await batchWrite(tableName, deleteOps);
+    }
+
+    // --- Create new job record ---
+    const jobId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    await putItem(userId, `BUDGETJOB#${jobId}`, {
+      jobId,
+      month: body.month,
+      statementText: body.statementText,
+      actualIncome: body.actualIncome ?? null,
+      status: 'processing',
+      createdAt: now,
+    });
+
+    // --- Invoke this Lambda asynchronously to process the statement ---
+    const functionName = process.env.AWS_LAMBDA_FUNCTION_NAME;
+    const invokeCmd = new InvokeCommand({
+      FunctionName: functionName,
+      InvocationType: 'Event', // async — returns immediately
+      Payload: JSON.stringify({
+        asyncAction: 'process-statement',
+        userId,
+        jobId,
+      }),
+    });
+    await lambdaClient.send(invokeCmd);
+
+    return {
+      statusCode: 202,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ jobId, status: 'processing' }),
+    };
+  } catch (err) {
+    console.error('handleSubmitStatement error:', err);
+    return {
+      statusCode: 500,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ error: 'Failed to submit statement' }),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/budget/job-status
+// ---------------------------------------------------------------------------
+
+/**
+ * Check the status of an async statement processing job.
+ * Returns the parsed transactions when the job is completed.
+ *
+ * Query: ?jobId=<uuid>
+ *
+ * @param {import("aws-lambda").APIGatewayProxyEventV2} event
+ * @param {string} userId
+ */
+export async function handleGetJobStatus(event, userId) {
+  try {
+    const jobId = event.queryStringParameters?.jobId;
+    if (!jobId) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'jobId query parameter is required' }),
+      };
+    }
+
+    const job = await getItem(userId, `BUDGETJOB#${jobId}`);
+    if (!job) {
+      return {
+        statusCode: 404,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'Job not found' }),
+      };
+    }
+
+    // Build response — never include the original statementText (it's large)
+    const response = {
+      jobId: job.jobId,
+      status: job.status,
+      month: job.month,
+    };
+
+    if (job.status === 'completed') {
+      response.transactions = job.transactions || [];
+      response.detectedIncome = job.detectedIncome ?? null;
+    }
+
+    if (job.status === 'failed') {
+      response.error = job.error || 'Unknown error';
+    }
+
+    return {
+      statusCode: 200,
+      headers: JSON_HEADERS,
+      body: JSON.stringify(response),
+    };
+  } catch (err) {
+    console.error('handleGetJobStatus error:', err);
+    return {
+      statusCode: 500,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ error: 'Failed to get job status' }),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Async Lambda handler: process-statement
+// ---------------------------------------------------------------------------
+
+/**
+ * Called directly by async Lambda invocation (not via API Gateway).
+ * Reads the job record, calls AI to parse the statement, and stores results.
+ *
+ * @param {{ asyncAction: string, userId: string, jobId: string }} event
+ */
+export async function handleProcessStatementAsync(event) {
+  const { userId, jobId } = event;
+
+  try {
+    // --- Read the job record ---
+    const job = await getItem(userId, `BUDGETJOB#${jobId}`);
+    if (!job) {
+      console.error(`handleProcessStatementAsync: job ${jobId} not found for user ${userId}`);
+      return;
+    }
+
+    if (job.status !== 'processing') {
+      console.warn(`handleProcessStatementAsync: job ${jobId} has status ${job.status}, skipping`);
+      return;
+    }
+
+    // --- Query user's budget categories and learning context ---
+    const [catItems, learnRecord] = await Promise.all([
+      queryByPrefix(userId, 'BCAT#'),
+      getItem(userId, 'BUDGETLEARN'),
+    ]);
+
+    const categories = catItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description || undefined,
+    }));
+
+    if (categories.length === 0) {
+      await updateItem(userId, `BUDGETJOB#${jobId}`, {
+        status: 'failed',
+        error: 'No budget categories found. Please create budget categories first.',
+        statementText: null, // remove statement text to save space
+      });
+      return;
+    }
+
+    const learningExamples = (learnRecord && learnRecord.examples) || [];
+
+    // --- Call AI to parse the statement (no timeout pressure) ---
+    const result = await parseStatementWithAI(job.statementText, categories, learningExamples);
+
+    if (result.error) {
+      await updateItem(userId, `BUDGETJOB#${jobId}`, {
+        status: 'failed',
+        error: result.error,
+        statementText: null,
+      });
+      return;
+    }
+
+    // --- Add tempId to each transaction ---
+    const transactions = result.transactions.map((t) => ({
+      ...t,
+      tempId: crypto.randomUUID(),
+    }));
+
+    // Use client-provided income if present, otherwise use AI-detected value
+    const detectedIncome =
+      job.actualIncome != null ? job.actualIncome : result.detectedIncome;
+
+    // --- Update job with results ---
+    await updateItem(userId, `BUDGETJOB#${jobId}`, {
+      status: 'completed',
+      transactions,
+      detectedIncome: detectedIncome ?? null,
+      statementText: null, // remove statement text to save space
+      completedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error('handleProcessStatementAsync error:', err);
+    // Update job status to failed
+    try {
+      await updateItem(userId, `BUDGETJOB#${jobId}`, {
+        status: 'failed',
+        error: err.message || 'Processing failed unexpectedly',
+        statementText: null,
+      });
+    } catch (updateErr) {
+      console.error('Failed to update job status to failed:', updateErr);
+    }
   }
 }
 

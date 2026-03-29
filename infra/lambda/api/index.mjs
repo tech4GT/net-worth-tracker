@@ -29,6 +29,9 @@ import {
   handleDeleteMonth,
   handleParseStatement,
   handleValidateCategories,
+  handleSubmitStatement,
+  handleGetJobStatus,
+  handleProcessStatementAsync,
 } from './routes/budget.mjs';
 
 // ---------------------------------------------------------------------------
@@ -48,6 +51,11 @@ function jsonResponse(statusCode, body) {
 // ---------------------------------------------------------------------------
 
 export async function handler(event) {
+  // Handle async Lambda invocations (not via API Gateway)
+  if (event.asyncAction === 'process-statement') {
+    return await handleProcessStatementAsync(event);
+  }
+
   try {
     const { method, path } = event.requestContext.http;
     const rawPath = event.rawPath || path;
@@ -195,7 +203,17 @@ export async function handler(event) {
       return await handleDeleteMonth(event, userId);
     }
 
-    // POST /api/budget/parse-statement
+    // POST /api/budget/submit-statement (async statement processing)
+    if (method === 'POST' && rawPath === '/api/budget/submit-statement') {
+      return await handleSubmitStatement(event, userId);
+    }
+
+    // GET /api/budget/job-status (poll async job)
+    if (method === 'GET' && rawPath === '/api/budget/job-status') {
+      return await handleGetJobStatus(event, userId);
+    }
+
+    // POST /api/budget/parse-statement (legacy synchronous — kept for backwards compat)
     if (method === 'POST' && rawPath === '/api/budget/parse-statement') {
       return await handleParseStatement(event, userId);
     }

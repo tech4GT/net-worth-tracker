@@ -70,6 +70,9 @@ export class NwtStack extends cdk.Stack {
     );
     fn.addEnvironment('ANTHROPIC_API_KEY', anthropicApiKey);
 
+    // Grant Lambda permission to invoke itself (for async statement processing)
+    fn.grantInvoke(fn);
+
     // ---------------------------------------------------------------
     // Cognito User Pool
     // ---------------------------------------------------------------
@@ -217,6 +220,8 @@ export class NwtStack extends cdk.Stack {
       { method: HttpMethod.GET, path: "/api/budget/ytd-summary" },
       { method: HttpMethod.DELETE, path: "/api/budget/months/{month}" },
       { method: HttpMethod.POST, path: "/api/budget/validate-categories" },
+      { method: HttpMethod.POST, path: "/api/budget/submit-statement" },
+      { method: HttpMethod.GET, path: "/api/budget/job-status" },
     ];
 
     for (const route of authorizedRoutes) {

@@ -1360,6 +1360,117 @@ function handleParseStatement(body) {
   };
 }
 
+// POST /api/budget/submit-statement — Async mock for dev (simulates async processing)
+function handleSubmitStatement(body) {
+  if (!body || !isObject(body)) {
+    return { status: 400, body: { error: 'Invalid or missing request body' } };
+  }
+  if (!body.month || !isString(body.month) || !MONTH_RE.test(body.month)) {
+    return { status: 400, body: { error: 'month is required and must be in YYYY-MM format' } };
+  }
+  if (!body.statementText || !isString(body.statementText)) {
+    return { status: 400, body: { error: 'statementText is required and must be a non-empty string' } };
+  }
+
+  // Check for existing active job
+  const existingJobs = dbQueryByPrefix('BUDGETJOB#');
+  const activeJob = existingJobs.find((j) => j.status === 'processing');
+  if (activeJob) {
+    return {
+      status: 409,
+      body: { error: 'A statement is already being processed', jobId: activeJob.jobId },
+    };
+  }
+
+  // Clean up old completed/failed jobs
+  const oldJobs = existingJobs.filter((j) => j.status !== 'processing');
+  for (const j of oldJobs) {
+    dbDeleteItem(`BUDGETJOB#${j.jobId}`);
+  }
+
+  // Create new job
+  const jobId = crypto.randomUUID();
+  const now = new Date().toISOString();
+  dbPutItem(`BUDGETJOB#${jobId}`, {
+    jobId,
+    month: body.month,
+    statementText: body.statementText,
+    actualIncome: body.actualIncome ?? null,
+    status: 'processing',
+    createdAt: now,
+  });
+
+  // Simulate async processing: parse the statement after a short delay
+  setTimeout(() => {
+    try {
+      const result = handleParseStatement({
+        month: body.month,
+        statementText: body.statementText,
+        actualIncome: body.actualIncome,
+      });
+
+      if (result.status === 200 && result.body) {
+        dbUpdateItem(`BUDGETJOB#${jobId}`, {
+          status: 'completed',
+          transactions: result.body.transactions || [],
+          detectedIncome: result.body.detectedIncome ?? null,
+          statementText: null,
+          completedAt: new Date().toISOString(),
+        });
+      } else {
+        dbUpdateItem(`BUDGETJOB#${jobId}`, {
+          status: 'failed',
+          error: result.body?.error || 'Processing failed',
+          statementText: null,
+        });
+      }
+    } catch (err) {
+      dbUpdateItem(`BUDGETJOB#${jobId}`, {
+        status: 'failed',
+        error: err.message || 'Processing failed unexpectedly',
+        statementText: null,
+      });
+    }
+    persistStore();
+  }, 3000); // 3 second delay to simulate async processing
+
+  return {
+    status: 202,
+    body: { jobId, status: 'processing' },
+  };
+}
+
+// GET /api/budget/job-status — Poll job status for dev
+function handleGetJobStatus(queryString) {
+  const params = new URLSearchParams(queryString);
+  const jobId = params.get('jobId');
+  if (!jobId) {
+    return { status: 400, body: { error: 'jobId query parameter is required' } };
+  }
+
+  const job = dbGetItem(`BUDGETJOB#${jobId}`);
+  if (!job) {
+    return { status: 404, body: { error: 'Job not found' } };
+  }
+
+  const response = {
+    jobId: job.jobId,
+    status: job.status,
+    month: job.month,
+  };
+
+  if (job.status === 'completed') {
+    response.transactions = job.transactions || [];
+    response.detectedIncome = job.detectedIncome ?? null;
+  }
+
+  if (job.status === 'failed') {
+    response.error = job.error || 'Unknown error';
+  }
+
+  return { status: 200, body: response };
+}
+
 // POST /api/budget/transactions/confirm
 function handleConfirmTransactions(body) {
   if (!body || !isObject(body)) {
@@ -1724,7 +1835,15 @@ async function handleRequest(req, res) {
     else if (method === 'GET' && pathname === '/api/budget/ytd-summary') {
       result = handleGetYtdSummary(queryString);
     }
-    // POST /api/budget/parse-statement
+    // POST /api/budget/submit-statement (async)
+    else if (method === 'POST' && pathname === '/api/budget/submit-statement') {
+      result = handleSubmitStatement(body);
+    }
+    // GET /api/budget/job-status (poll async job)
+    else if (method === 'GET' && pathname === '/api/budget/job-status') {
+      result = handleGetJobStatus(queryString);
+    }
+    // POST /api/budget/parse-statement (legacy sync)
     else if (method === 'POST' && pathname === '/api/budget/parse-statement') {
       result = handleParseStatement(body);
     }
