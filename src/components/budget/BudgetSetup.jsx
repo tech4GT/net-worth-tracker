@@ -86,7 +86,8 @@ export default function BudgetSetup({ initialConfig = null, initialCategories = 
     setCategories((prev) =>
       prev.map((c) => (c.id === id ? { ...c, description } : c))
     )
-    if (validationIssues) setValidationIssues(null)
+    // Don't clear validation issues here — the description input is shown
+    // because of the issue. Clearing would hide the input mid-typing.
   }
 
   const updateByAmount = (id, value, period) => {
