@@ -40,6 +40,7 @@ const useStore = create((set, get) => ({
   budgetError: null,
   parsedTransactions: null,
   parsingStatement: false,
+  parsingProgress: null, // { current: number, total: number } during chunked parsing
 
   // --- Initial load ---
   loadUserData: async () => {
@@ -571,18 +572,45 @@ const useStore = create((set, get) => ({
   },
 
   parseStatement: async ({ month, statementText, actualIncome }) => {
-    set({ parsingStatement: true })
+    const CHUNK_SIZE = 150 // lines per chunk
+    const lines = statementText.split('\n').filter((l) => l.trim().length > 0)
+    const chunks = []
+    for (let i = 0; i < lines.length; i += CHUNK_SIZE) {
+      chunks.push(lines.slice(i, i + CHUNK_SIZE).join('\n'))
+    }
+
+    set({ parsingStatement: true, parsingProgress: { current: 0, total: chunks.length } })
+
     try {
-      const result = await api.post('/api/budget/parse-statement', {
+      const allTransactions = []
+      let totalDetectedIncome = 0
+
+      for (let i = 0; i < chunks.length; i++) {
+        set({ parsingProgress: { current: i + 1, total: chunks.length } })
+        const result = await api.post('/api/budget/parse-statement', {
+          month,
+          statementText: chunks[i],
+          actualIncome: i === 0 ? actualIncome : undefined,
+        })
+        if (result.transactions) {
+          allTransactions.push(...result.transactions)
+        }
+        if (result.detectedIncome) {
+          totalDetectedIncome += result.detectedIncome
+        }
+      }
+
+      const merged = {
         month,
-        statementText,
-        actualIncome,
-      })
-      set({ parsedTransactions: result, parsingStatement: false })
+        transactions: allTransactions,
+        detectedIncome: totalDetectedIncome || null,
+      }
+
+      set({ parsedTransactions: merged, parsingStatement: false, parsingProgress: null })
       track('budget_parse_statement')
-      return result
+      return merged
     } catch (err) {
-      set({ parsingStatement: false })
+      set({ parsingStatement: false, parsingProgress: null })
       const msg = err?.message || 'Unknown error'
       toastError(`Failed to parse statement: ${msg}`)
       throw err

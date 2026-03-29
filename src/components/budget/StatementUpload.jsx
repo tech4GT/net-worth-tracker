@@ -25,6 +25,7 @@ async function extractPdfText(file) {
 export default function StatementUpload({ month }) {
   const parseStatement = useStore((s) => s.parseStatement)
   const parsingStatement = useStore((s) => s.parsingStatement)
+  const parsingProgress = useStore((s) => s.parsingProgress)
 
   const [income, setIncome] = useState('')
   const [fileName, setFileName] = useState('')
@@ -144,7 +145,7 @@ export default function StatementUpload({ month }) {
         {/* Warnings */}
         {fileName && fileText && fileText.length > 80000 && (
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-sm text-amber-700 dark:text-amber-300">
-            Large statement ({Math.round(fileText.length / 1024)}KB). This may take longer to process and some transactions might be missed. Consider splitting into multiple uploads if needed.
+            Large statement ({Math.round(fileText.length / 1024)}KB). This will be processed in multiple chunks and may take longer.
           </div>
         )}
         {fileName && !extracting && !fileText && (
@@ -176,12 +177,20 @@ export default function StatementUpload({ month }) {
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              {extracting ? 'Extracting PDF...' : 'Parsing Statement...'}
+              {extracting ? 'Extracting PDF...' : parsingProgress ? `Parsing chunk ${parsingProgress.current} of ${parsingProgress.total}...` : 'Parsing Statement...'}
             </span>
           ) : (
             'Parse Statement'
           )}
         </Button>
+        {parsingStatement && parsingProgress && parsingProgress.total > 1 && (
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mt-2">
+            <div
+              className="bg-primary-500 h-2 rounded-full transition-all"
+              style={{ width: `${(parsingProgress.current / parsingProgress.total) * 100}%` }}
+            />
+          </div>
+        )}
       </div>
     </div>
   )
