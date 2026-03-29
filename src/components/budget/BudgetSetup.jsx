@@ -172,22 +172,36 @@ export default function BudgetSetup({ initialConfig = null, initialCategories = 
       })
 
       if (isEditing) {
-        // Delete categories that were removed or unchecked
+        const updateBudgetCategory = useStore.getState().updateBudgetCategory
+        // Delete unchecked categories (skip defaults — can't delete those)
         const removedCats = (initialCategories || []).filter(
           (orig) => !included.some((c) => c.id === orig.id)
         )
         for (const cat of removedCats) {
-          try { await deleteBudgetCategory(cat.id) } catch { /* ignore */ }
+          if (!cat.isDefault) {
+            try { await deleteBudgetCategory(cat.id) } catch { /* ignore */ }
+          }
         }
-        // Update existing + create new
+        // Update existing categories, create new ones
         for (const cat of included) {
-          await addBudgetCategory({
-            name: cat.name,
-            color: cat.color,
-            icon: cat.icon,
-            percentOfIncome: cat.percentOfIncome,
-            ...(cat.description ? { description: cat.description } : {}),
-          })
+          const isExisting = (initialCategories || []).some((c) => c.id === cat.id)
+          if (isExisting) {
+            await updateBudgetCategory(cat.id, {
+              name: cat.name,
+              color: cat.color,
+              icon: cat.icon,
+              percentOfIncome: cat.percentOfIncome,
+              ...(cat.description ? { description: cat.description } : {}),
+            })
+          } else {
+            await addBudgetCategory({
+              name: cat.name,
+              color: cat.color,
+              icon: cat.icon,
+              percentOfIncome: cat.percentOfIncome,
+              ...(cat.description ? { description: cat.description } : {}),
+            })
+          }
         }
       } else {
         for (const cat of included) {
