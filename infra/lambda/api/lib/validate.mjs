@@ -417,6 +417,8 @@ export function validateConfirmTransactions(body) {
       };
       if (tx.date !== undefined) cleaned.date = tx.date;
       if (tx.id !== undefined) cleaned.id = tx.id;
+      if (tx.originalLine !== undefined) cleaned.originalLine = tx.originalLine;
+      if (tx.confidence !== undefined) cleaned.confidence = tx.confidence;
       return cleaned;
     }),
   };

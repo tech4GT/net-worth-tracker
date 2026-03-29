@@ -43,9 +43,19 @@ function buildPrompt(statementText, categories, learningExamples) {
   let learningSection = '';
   if (Array.isArray(learningExamples) && learningExamples.length > 0) {
     const exampleLines = learningExamples
-      .map((ex) => `  - "${ex.pattern}" → ${ex.categoryName} (${ex.categoryId})`)
+      .map((ex) => {
+        let s = `  - "${ex.pattern}" → ${ex.categoryName} (${ex.categoryId})`;
+        const details = [];
+        if (ex.amount) details.push(`amount: ${ex.amount}`);
+        if (ex.originalLine) details.push(`raw: "${ex.originalLine}"`);
+        if (details.length > 0) s += ` [${details.join(', ')}]`;
+        return s;
+      })
       .join('\n');
-    learningSection = `\nPREVIOUS CLASSIFICATIONS (learn from these — classify similar transactions the same way):\n${exampleLines}\n`;
+    learningSection = `
+PREVIOUS CLASSIFICATIONS (learn from these — use the vendor name, location, amount range, and raw text patterns to classify similar transactions the same way):
+${exampleLines}
+`;
   }
 
   return `You are a bank statement parser. Your job is to extract individual spending transactions from a raw bank statement and categorize each one.

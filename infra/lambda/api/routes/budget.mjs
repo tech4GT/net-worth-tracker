@@ -436,6 +436,8 @@ export async function handleConfirmTransactions(event, userId) {
             type: tx.type || 'expense',
             budgetCategoryId: tx.budgetCategoryId || tx.categoryId,
             date: tx.date || now,
+            ...(tx.originalLine ? { originalLine: tx.originalLine } : {}),
+            ...(tx.confidence != null ? { confidence: tx.confidence } : {}),
             createdAt: now,
             updatedAt: now,
           },
@@ -502,6 +504,7 @@ export async function handleConfirmTransactions(event, userId) {
       }
 
       // Extract learning examples from confirmed transactions (expenses and refunds only)
+      // Include rich context: description, amount, date, original line for location/time hints
       const newExamples = transactions
         .filter((tx) => {
           const type = tx.type || 'expense';
@@ -509,6 +512,9 @@ export async function handleConfirmTransactions(event, userId) {
         })
         .map((tx) => ({
           pattern: tx.description,
+          originalLine: tx.originalLine || '',
+          amount: tx.amount,
+          date: tx.date || '',
           categoryId: tx.budgetCategoryId || tx.categoryId,
           categoryName: catNameMap[tx.budgetCategoryId || tx.categoryId] || 'Other',
           type: tx.type || 'expense',
