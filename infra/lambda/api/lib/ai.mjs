@@ -119,7 +119,7 @@ export async function parseStatementWithAI(statementText, categories, learningEx
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 8192,
+      max_tokens: 16384,
       temperature: 0,
       messages: [
         {
@@ -157,7 +157,27 @@ export async function parseStatementWithAI(statementText, categories, learningEx
       jsonText = jsonText.slice(0, lastBrace + 1);
     }
 
-    const parsed = JSON.parse(jsonText);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonText);
+    } catch (jsonErr) {
+      // Response may be truncated — try to salvage by closing incomplete JSON
+      // Find the last complete transaction object (ends with })
+      const lastCompleteObj = jsonText.lastIndexOf('},');
+      const lastObj = jsonText.lastIndexOf('}');
+      const cutPoint = lastCompleteObj > 0 ? lastCompleteObj + 1 : lastObj;
+      if (cutPoint > 0) {
+        const salvaged = jsonText.slice(0, cutPoint) + '], "detectedIncome": null}';
+        try {
+          parsed = JSON.parse(salvaged);
+          console.log('Salvaged truncated JSON response — some transactions may be missing');
+        } catch {
+          throw jsonErr; // Give up
+        }
+      } else {
+        throw jsonErr;
+      }
+    }
 
     // Validate the expected shape
     if (!parsed || !Array.isArray(parsed.transactions)) {
