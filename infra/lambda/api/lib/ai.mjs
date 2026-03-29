@@ -119,7 +119,7 @@ export async function parseStatementWithAI(statementText, categories, learningEx
   try {
     const response = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4096,
+      max_tokens: 8192,
       temperature: 0,
       messages: [
         {
@@ -136,11 +136,25 @@ export async function parseStatementWithAI(statementText, categories, learningEx
       return { error: 'AI response did not contain text content' };
     }
 
-    // Attempt to parse the JSON response — strip markdown fences if present
+    // Strip markdown fences, leading/trailing noise, and extract JSON
     let jsonText = rawText;
-    const fenceMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    // Try multiple fence patterns
+    const fenceMatch = rawText.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/) ||
+                       rawText.match(/`{3,}(?:json)?\s*\n?([\s\S]*?)\n?\s*`{3,}/);
     if (fenceMatch) {
       jsonText = fenceMatch[1].trim();
+    }
+    // If still not valid JSON, try to find the JSON object/array
+    if (!jsonText.startsWith('{') && !jsonText.startsWith('[')) {
+      const jsonStart = jsonText.indexOf('{');
+      if (jsonStart !== -1) {
+        jsonText = jsonText.slice(jsonStart);
+      }
+    }
+    // Remove trailing text after the JSON closes
+    const lastBrace = jsonText.lastIndexOf('}');
+    if (lastBrace !== -1 && lastBrace < jsonText.length - 1) {
+      jsonText = jsonText.slice(0, lastBrace + 1);
     }
 
     const parsed = JSON.parse(jsonText);
