@@ -583,7 +583,8 @@ const useStore = create((set, get) => ({
       return result
     } catch (err) {
       set({ parsingStatement: false })
-      toastError('Failed to parse statement')
+      const msg = err?.message || 'Unknown error'
+      toastError(`Failed to parse statement: ${msg}`)
       throw err
     }
   },

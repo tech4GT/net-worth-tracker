@@ -122,7 +122,7 @@ export default function StatementUpload({ month }) {
                   {fileName}
                 </p>
                 <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                  Click to change file
+                  {fileText ? `${Math.round(fileText.length / 1024)}KB extracted` : 'No text extracted'} · Click to change file
                 </p>
               </div>
             ) : (
@@ -140,6 +140,18 @@ export default function StatementUpload({ month }) {
             )}
           </button>
         </div>
+
+        {/* Warnings */}
+        {fileName && fileText && fileText.length > 80000 && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 text-sm text-amber-700 dark:text-amber-300">
+            Large statement ({Math.round(fileText.length / 1024)}KB). This may take longer to process and some transactions might be missed. Consider splitting into multiple uploads if needed.
+          </div>
+        )}
+        {fileName && !extracting && !fileText && (
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 text-sm text-red-700 dark:text-red-300">
+            Could not extract text from this file. Try a different format (CSV or TXT) or a different PDF.
+          </div>
+        )}
 
         {/* Income input */}
         <Input
