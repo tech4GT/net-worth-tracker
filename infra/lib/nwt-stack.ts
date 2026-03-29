@@ -71,7 +71,11 @@ export class NwtStack extends cdk.Stack {
     fn.addEnvironment('ANTHROPIC_API_KEY', anthropicApiKey);
 
     // Grant Lambda permission to invoke itself (for async statement processing)
-    fn.grantInvoke(fn);
+    // Using addToRolePolicy instead of grantInvoke(fn) to avoid circular dependency
+    fn.addToRolePolicy(new cdk.aws_iam.PolicyStatement({
+      actions: ['lambda:InvokeFunction'],
+      resources: [fn.functionArn],
+    }));
 
     // ---------------------------------------------------------------
     // Cognito User Pool
