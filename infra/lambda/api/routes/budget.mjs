@@ -856,8 +856,18 @@ export async function handleParseStatement(event, userId) {
     // Extract learning examples (if any)
     const learningExamples = (learnRecord && learnRecord.examples) || [];
 
+    // --- Trim statement text to reduce token count and stay within API Gateway timeout ---
+    // Remove common PDF boilerplate lines, keep transaction-like lines
+    let trimmedText = body.statementText;
+    const lines = trimmedText.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    // Remove very short lines (page numbers, headers) and very long lines (disclaimers)
+    const filtered = lines.filter((l) => l.length > 5 && l.length < 500);
+    // Cap at ~400 lines to keep prompt under ~10K tokens
+    const capped = filtered.length > 400 ? filtered.slice(0, 400) : filtered;
+    trimmedText = capped.join('\n');
+
     // --- Call AI to parse the statement ---
-    const result = await parseStatementWithAI(body.statementText, categories, learningExamples);
+    const result = await parseStatementWithAI(trimmedText, categories, learningExamples);
 
     // Check for AI error
     if (result.error) {
