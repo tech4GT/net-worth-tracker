@@ -59,8 +59,9 @@ const useStore = create((set, get) => ({
         loading: false,
         hydrated: true,
       })
-      // Auto-refresh stock prices on load
+      // Auto-refresh stock prices and exchange rates on load
       get().refreshStockPrices()
+      get().refreshExchangeRates()
     } catch (err) {
       set({ loading: false, error: err.message })
     }
