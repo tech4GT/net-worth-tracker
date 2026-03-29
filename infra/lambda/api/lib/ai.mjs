@@ -32,7 +32,11 @@ function getClient() {
 
 function buildPrompt(statementText, categories) {
   const categoryList = categories
-    .map((c) => `  - id: "${c.id}", name: "${c.name}"`)
+    .map((c) => {
+      let s = `  - id: "${c.id}", name: "${c.name}"`;
+      if (c.description) s += ` — ${c.description}`;
+      return s;
+    })
     .join('\n');
 
   return `You are a bank statement parser. Your job is to extract individual spending transactions from a raw bank statement and categorize each one.
@@ -170,18 +174,31 @@ export async function validateCategoriesWithAI(categories) {
 
   const categoryNames = categories.map((c) => c.name).join(', ');
 
-  const prompt = `You are a budget category name validator. Given these budget category names, flag any that are:
-1. Too vague or ambiguous (e.g. "Stuff", "Things", "Misc 2")
-2. Overlapping with another category in the list (e.g. "Food" and "Groceries" are hard to distinguish)
-3. Too long or unclear for bank statement categorization
+  const catList = categories.map((c) => {
+    let s = `- "${c.name}"`;
+    if (c.description) s += ` (description: ${c.description})`;
+    return s;
+  }).join('\n');
 
-Category names: ${categoryNames}
+  const prompt = `You are a budget category validator. Review these budget categories for a personal finance app. An AI will later use these names to categorize bank transactions.
 
-Return ONLY valid JSON (no markdown fences). If all names are fine:
+Categories:
+${catList}
+
+Flag ONLY categories that are genuinely problematic:
+1. So vague that an AI couldn't categorize bank transactions into them (e.g. "Stuff", "Things", "Misc 2", "Category 1")
+2. Clearly overlapping with another category — where the same transaction could reasonably go in either (e.g. "Food" and "Groceries")
+
+Do NOT flag:
+- Common budget names like "Housing", "Rent", "Food & Dining", "Entertainment", "Personal", "Other" — these are fine
+- Categories with a description that clarifies their meaning
+- Slightly informal but clear names like "Fun Money", "Self Care", "Going Out"
+
+Return ONLY valid JSON (no markdown fences). If all categories are fine:
 {"valid": true}
 
-If there are issues:
-{"valid": false, "issues": [{"name": "exact category name", "reason": "short explanation"}]}`;
+If there are issues — flag ONLY the truly problematic ones and suggest adding a description:
+{"valid": false, "issues": [{"name": "exact category name", "reason": "brief explanation — suggest they add a description to clarify"}]}`;
 
   try {
     const response = await client.messages.create({

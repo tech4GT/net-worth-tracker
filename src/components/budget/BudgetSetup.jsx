@@ -33,7 +33,7 @@ export default function BudgetSetup() {
   const [budgetMode, setBudgetMode] = useState('percentage') // 'percentage' | 'amount'
   const [amountPeriod, setAmountPeriod] = useState('monthly') // 'monthly' | 'yearly' — for amount mode
   const [categories, setCategories] = useState(
-    DEFAULT_BUDGET_CATEGORIES.map((c) => ({ ...c, included: true }))
+    DEFAULT_BUDGET_CATEGORIES.map((c) => ({ ...c, included: true, description: '' }))
   )
   const [newName, setNewName] = useState('')
   const [newValue, setNewValue] = useState('')
@@ -63,6 +63,13 @@ export default function BudgetSetup() {
     setCategories((prev) =>
       prev.map((c) => (c.id === id ? { ...c, percentOfIncome: Number(value) || 0 } : c))
     )
+  }
+
+  const updateDescription = (id, description) => {
+    setCategories((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, description } : c))
+    )
+    if (validationIssues) setValidationIssues(null)
   }
 
   const updateByAmount = (id, value, period) => {
@@ -124,7 +131,7 @@ export default function BudgetSetup() {
       setValidationIssues(null)
       try {
         const result = await validateBudgetCategories(
-          included.map((c) => ({ name: c.name, percentOfIncome: c.percentOfIncome }))
+          included.map((c) => ({ name: c.name, percentOfIncome: c.percentOfIncome, description: c.description || '' }))
         )
         if (result.valid === false && result.issues && result.issues.length > 0) {
           setValidationIssues(result.issues)
@@ -151,6 +158,7 @@ export default function BudgetSetup() {
           color: cat.color,
           icon: cat.icon,
           percentOfIncome: cat.percentOfIncome,
+          ...(cat.description ? { description: cat.description } : {}),
         })
       }
       await loadBudgetData()
@@ -435,7 +443,19 @@ export default function BudgetSetup() {
                       )}
                     </div>
                     {issue && (
-                      <p className="text-xs text-danger-500 mt-1 ml-10">{issue.reason}</p>
+                      <div className="ml-10 mt-1 space-y-1">
+                        <p className="text-xs text-danger-500">{issue.reason}</p>
+                        <input
+                          type="text"
+                          placeholder="Add a description to clarify this category (e.g., 'Monthly rent and mortgage payments')"
+                          value={cat.description || ''}
+                          onChange={(e) => updateDescription(cat.id, e.target.value)}
+                          className="w-full text-xs bg-white dark:bg-gray-800 border border-danger-300 dark:border-danger-600 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary-500 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                        />
+                      </div>
+                    )}
+                    {!issue && cat.description && (
+                      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1 ml-10 italic">{cat.description}</p>
                     )}
                   </div>
                 )

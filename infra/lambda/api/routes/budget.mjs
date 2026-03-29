@@ -101,8 +101,9 @@ export async function handleGetBudgetState(event, userId) {
       return cleaned;
     });
 
-    // Seed default budget categories for new users
-    if (categories.length === 0) {
+    // Only seed defaults if config exists but no categories (edge case recovery)
+    // Do NOT seed on first visit — wizard creates categories
+    if (categories.length === 0 && config) {
       const now = new Date().toISOString();
       const tableName = process.env.TABLE_NAME;
       const operations = DEFAULT_BUDGET_CATEGORIES.map((cat) => ({
