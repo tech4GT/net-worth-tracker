@@ -11,6 +11,7 @@
  * GET    /api/budget/ytd                          — year-to-date summary
  * DELETE /api/budget/months/{month}               — delete a month and its transactions
  * POST   /api/budget/parse-statement              — parse a bank statement with AI
+ * POST   /api/budget/validate-categories          — AI validation of category names
  */
 
 import crypto from 'node:crypto';
@@ -21,7 +22,7 @@ import {
   validateBudgetCategory,
   validateConfirmTransactions,
 } from '../lib/validate.mjs';
-import { parseStatementWithAI } from '../lib/ai.mjs';
+import { parseStatementWithAI, validateCategoriesWithAI } from '../lib/ai.mjs';
 
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
 const MAX_STATEMENT_BYTES = 100 * 1024; // 100 KB
@@ -830,6 +831,66 @@ export async function handleParseStatement(event, userId) {
       statusCode: 500,
       headers: JSON_HEADERS,
       body: JSON.stringify({ error: 'Failed to parse statement' }),
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/budget/validate-categories
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate budget category names using AI.
+ * Flags vague, ambiguous, or overlapping category names.
+ *
+ * Body: { categories: [{ name: string, percentOfIncome: number }] }
+ *
+ * @param {import("aws-lambda").APIGatewayProxyEventV2} event
+ * @param {string} userId
+ */
+export async function handleValidateCategories(event, userId) {
+  try {
+    const body = parseBody(event);
+    if (!body) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'Invalid or missing request body' }),
+      };
+    }
+
+    if (!Array.isArray(body.categories) || body.categories.length === 0) {
+      return {
+        statusCode: 400,
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ error: 'categories must be a non-empty array' }),
+      };
+    }
+
+    // Validate each category has a name
+    for (const cat of body.categories) {
+      if (!cat.name || typeof cat.name !== 'string') {
+        return {
+          statusCode: 400,
+          headers: JSON_HEADERS,
+          body: JSON.stringify({ error: 'Each category must have a non-empty name string' }),
+        };
+      }
+    }
+
+    const result = await validateCategoriesWithAI(body.categories);
+
+    return {
+      statusCode: 200,
+      headers: JSON_HEADERS,
+      body: JSON.stringify(result),
+    };
+  } catch (err) {
+    console.error('handleValidateCategories error:', err);
+    return {
+      statusCode: 500,
+      headers: JSON_HEADERS,
+      body: JSON.stringify({ error: 'Failed to validate categories' }),
     };
   }
 }

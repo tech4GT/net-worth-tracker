@@ -9,9 +9,13 @@ export default function BudgetSetup() {
   const saveBudgetConfig = useStore((s) => s.saveBudgetConfig)
   const addBudgetCategory = useStore((s) => s.addBudgetCategory)
   const loadBudgetData = useStore((s) => s.loadBudgetData)
+  const validateBudgetCategories = useStore((s) => s.validateBudgetCategories)
 
   const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
+  const [validating, setValidating] = useState(false)
+  const [validationIssues, setValidationIssues] = useState(null)
+  const [skipValidation, setSkipValidation] = useState(false)
 
   // Step 1: Config
   const currentYear = new Date().getFullYear()
@@ -112,6 +116,28 @@ export default function BudgetSetup() {
   }
 
   const handleFinish = async () => {
+    const included = categories.filter((c) => c.included)
+
+    // Run AI validation unless the user chose to skip
+    if (!skipValidation) {
+      setValidating(true)
+      setValidationIssues(null)
+      try {
+        const result = await validateBudgetCategories(
+          included.map((c) => ({ name: c.name, percentOfIncome: c.percentOfIncome }))
+        )
+        if (result.valid === false && result.issues && result.issues.length > 0) {
+          setValidationIssues(result.issues)
+          setValidating(false)
+          return
+        }
+      } catch {
+        // If validation fails (network error, etc.), proceed anyway
+      }
+      setValidating(false)
+    }
+
+    // Proceed with saving
     setSaving(true)
     try {
       await saveBudgetConfig({
@@ -119,7 +145,6 @@ export default function BudgetSetup() {
         year: Number(year),
         currency,
       })
-      const included = categories.filter((c) => c.included)
       for (const cat of included) {
         await addBudgetCategory({
           name: cat.name,
@@ -133,6 +158,7 @@ export default function BudgetSetup() {
       // Errors handled by store
     } finally {
       setSaving(false)
+      setSkipValidation(false)
     }
   }
 
@@ -339,69 +365,81 @@ export default function BudgetSetup() {
 
             {/* Category list */}
             <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-              {categories.map((cat) => (
-                <div
-                  key={cat.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
-                    cat.included
-                      ? 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
-                      : 'border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 opacity-50'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={cat.included}
-                    onChange={() => toggleCategory(cat.id)}
-                    className="rounded border-gray-300 dark:border-gray-600 cursor-pointer shrink-0"
-                  />
-                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
-                  <input
-                    type="text"
-                    value={cat.name}
-                    onChange={(e) => updateName(cat.id, e.target.value)}
-                    disabled={!cat.included}
-                    className="flex-1 text-sm bg-transparent border-none focus:outline-none text-gray-900 dark:text-gray-100 disabled:text-gray-400 min-w-0"
-                  />
-                  <div className="flex items-center gap-1 shrink-0">
-                    {budgetMode === 'percentage' ? (
-                      <>
-                        <input
-                          type="number"
-                          value={cat.percentOfIncome}
-                          onChange={(e) => updateByPercent(cat.id, e.target.value)}
-                          disabled={!cat.included}
-                          min="0" max="100" step="0.1"
-                          className="w-14 text-sm text-right bg-transparent border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 text-gray-900 dark:text-gray-100 disabled:text-gray-400"
-                        />
-                        <span className="text-xs text-gray-400 w-5">%</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="text-xs text-gray-400">{currencySymbol}</span>
-                        <input
-                          type="number"
-                          value={Math.round(getCatAmount(cat, amountPeriod)) || ''}
-                          onChange={(e) => updateByAmount(cat.id, e.target.value, amountPeriod)}
-                          disabled={!cat.included}
-                          min="0" step="1"
-                          className="w-20 text-sm text-right bg-transparent border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 text-gray-900 dark:text-gray-100 disabled:text-gray-400"
-                          placeholder="0"
-                        />
-                      </>
+              {categories.map((cat) => {
+                const issue = validationIssues?.find((i) => i.name === cat.name)
+                return (
+                  <div key={cat.id}>
+                    <div
+                      className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                        issue
+                          ? 'border-danger-400 dark:border-danger-500 bg-danger-50 dark:bg-danger-900/20'
+                          : cat.included
+                          ? 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800'
+                          : 'border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 opacity-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={cat.included}
+                        onChange={() => toggleCategory(cat.id)}
+                        className="rounded border-gray-300 dark:border-gray-600 cursor-pointer shrink-0"
+                      />
+                      <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                      <input
+                        type="text"
+                        value={cat.name}
+                        onChange={(e) => {
+                          updateName(cat.id, e.target.value)
+                          if (validationIssues) setValidationIssues(null)
+                        }}
+                        disabled={!cat.included}
+                        className="flex-1 text-sm bg-transparent border-none focus:outline-none text-gray-900 dark:text-gray-100 disabled:text-gray-400 min-w-0"
+                      />
+                      <div className="flex items-center gap-1 shrink-0">
+                        {budgetMode === 'percentage' ? (
+                          <>
+                            <input
+                              type="number"
+                              value={cat.percentOfIncome}
+                              onChange={(e) => updateByPercent(cat.id, e.target.value)}
+                              disabled={!cat.included}
+                              min="0" max="100" step="0.1"
+                              className="w-14 text-sm text-right bg-transparent border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 text-gray-900 dark:text-gray-100 disabled:text-gray-400"
+                            />
+                            <span className="text-xs text-gray-400 w-5">%</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-xs text-gray-400">{currencySymbol}</span>
+                            <input
+                              type="number"
+                              value={Math.round(getCatAmount(cat, amountPeriod)) || ''}
+                              onChange={(e) => updateByAmount(cat.id, e.target.value, amountPeriod)}
+                              disabled={!cat.included}
+                              min="0" step="1"
+                              className="w-20 text-sm text-right bg-transparent border border-gray-200 dark:border-gray-700 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary-500 text-gray-900 dark:text-gray-100 disabled:text-gray-400"
+                              placeholder="0"
+                            />
+                          </>
+                        )}
+                      </div>
+                      {cat.isCustom && (
+                        <button
+                          onClick={() => removeCategory(cat.id)}
+                          className="text-gray-400 hover:text-danger-500 cursor-pointer shrink-0"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      )}
+                    </div>
+                    {issue && (
+                      <p className="text-xs text-danger-500 mt-1 ml-10">{issue.reason}</p>
                     )}
                   </div>
-                  {cat.isCustom && (
-                    <button
-                      onClick={() => removeCategory(cat.id)}
-                      className="text-gray-400 hover:text-danger-500 cursor-pointer shrink-0"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Add custom category */}
@@ -426,6 +464,24 @@ export default function BudgetSetup() {
               </Button>
             </div>
 
+            {/* Validation issues banner */}
+            {validationIssues && validationIssues.length > 0 && (
+              <div className="bg-danger-50 dark:bg-danger-900/20 border border-danger-200 dark:border-danger-800 rounded-lg p-3 space-y-2">
+                <p className="text-sm font-medium text-danger-700 dark:text-danger-300">
+                  Some category names need attention. Fix them above and try again.
+                </p>
+                <button
+                  onClick={() => {
+                    setSkipValidation(true)
+                    setValidationIssues(null)
+                  }}
+                  className="text-xs text-danger-500 dark:text-danger-400 underline hover:text-danger-700 dark:hover:text-danger-200 cursor-pointer"
+                >
+                  Skip Check
+                </button>
+              </div>
+            )}
+
             {/* Actions */}
             <div className="flex gap-3 pt-4">
               <Button variant="ghost" className="flex-1" onClick={() => setStep(1)}>
@@ -434,9 +490,9 @@ export default function BudgetSetup() {
               <Button
                 className="flex-1"
                 onClick={handleFinish}
-                disabled={saving || categories.filter((c) => c.included).length === 0}
+                disabled={saving || validating || categories.filter((c) => c.included).length === 0}
               >
-                {saving ? 'Setting up...' : 'Finish Setup'}
+                {validating ? 'Checking names...' : saving ? 'Setting up...' : 'Finish Setup'}
               </Button>
             </div>
 

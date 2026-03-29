@@ -216,6 +216,7 @@ export class NwtStack extends cdk.Stack {
       { method: HttpMethod.GET, path: "/api/budget/months/{month}/transactions" },
       { method: HttpMethod.GET, path: "/api/budget/ytd-summary" },
       { method: HttpMethod.DELETE, path: "/api/budget/months/{month}" },
+      { method: HttpMethod.POST, path: "/api/budget/validate-categories" },
     ];
 
     for (const route of authorizedRoutes) {

@@ -28,6 +28,7 @@ import {
   handleGetYtdSummary,
   handleDeleteMonth,
   handleParseStatement,
+  handleValidateCategories,
 } from './routes/budget.mjs';
 
 // ---------------------------------------------------------------------------
@@ -197,6 +198,11 @@ export async function handler(event) {
     // POST /api/budget/parse-statement
     if (method === 'POST' && rawPath === '/api/budget/parse-statement') {
       return await handleParseStatement(event, userId);
+    }
+
+    // POST /api/budget/validate-categories
+    if (method === 'POST' && rawPath === '/api/budget/validate-categories') {
+      return await handleValidateCategories(event, userId);
     }
 
     // -----------------------------------------------------------------------

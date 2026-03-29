@@ -610,6 +610,11 @@ const useStore = create((set, get) => ({
     }
   },
 
+  validateBudgetCategories: async (categories) => {
+    const result = await api.post('/api/budget/validate-categories', { categories })
+    return result
+  },
+
   clearParsedTransactions: () => {
     set({ parsedTransactions: null })
   },

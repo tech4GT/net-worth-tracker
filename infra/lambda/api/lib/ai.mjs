@@ -1,10 +1,12 @@
 /**
- * Anthropic API wrapper for parsing bank statements with Claude Haiku.
+ * Anthropic API wrapper for AI-powered budget features.
  *
  * Uses the @anthropic-ai/sdk package with an API key from the
  * ANTHROPIC_API_KEY environment variable (set via SSM in CDK).
  *
- * Exports a single function: parseStatementWithAI(statementText, categories)
+ * Exports:
+ *   - parseStatementWithAI(statementText, categories)
+ *   - validateCategoriesWithAI(categories)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -149,5 +151,79 @@ export async function parseStatementWithAI(statementText, categories) {
     }
 
     return { error: `AI parsing failed: ${err.message}` };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// validateCategoriesWithAI
+// ---------------------------------------------------------------------------
+
+/**
+ * Validate budget category names using Claude Haiku.
+ * Flags names that are too vague, overlapping, or unclear.
+ *
+ * @param {Array<{name: string, percentOfIncome: number}>} categories
+ * @returns {Promise<{valid: true} | {valid: false, issues: Array<{name: string, reason: string}>}>}
+ */
+export async function validateCategoriesWithAI(categories) {
+  const client = getClient();
+
+  const categoryNames = categories.map((c) => c.name).join(', ');
+
+  const prompt = `You are a budget category name validator. Given these budget category names, flag any that are:
+1. Too vague or ambiguous (e.g. "Stuff", "Things", "Misc 2")
+2. Overlapping with another category in the list (e.g. "Food" and "Groceries" are hard to distinguish)
+3. Too long or unclear for bank statement categorization
+
+Category names: ${categoryNames}
+
+Return ONLY valid JSON (no markdown fences). If all names are fine:
+{"valid": true}
+
+If there are issues:
+{"valid": false, "issues": [{"name": "exact category name", "reason": "short explanation"}]}`;
+
+  try {
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      temperature: 0,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    const rawText = (response.content[0].text || '').trim();
+    if (!rawText) {
+      console.error('validateCategoriesWithAI: empty response');
+      return { valid: true };
+    }
+
+    let jsonText = rawText;
+    const fenceMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenceMatch) {
+      jsonText = fenceMatch[1].trim();
+    }
+
+    const parsed = JSON.parse(jsonText);
+
+    if (parsed.valid === true) {
+      return { valid: true };
+    }
+
+    if (parsed.valid === false && Array.isArray(parsed.issues)) {
+      return {
+        valid: false,
+        issues: parsed.issues.map((i) => ({
+          name: String(i.name || ''),
+          reason: String(i.reason || ''),
+        })),
+      };
+    }
+
+    // Unexpected shape — treat as valid to avoid blocking the user
+    return { valid: true };
+  } catch (err) {
+    console.error('validateCategoriesWithAI error:', err);
+    // On error, don't block the user — treat as valid
+    return { valid: true };
   }
 }
