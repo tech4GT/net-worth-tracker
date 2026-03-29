@@ -15,8 +15,30 @@ async function extractPdfText(file) {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
-    const text = content.items.map((item) => item.str).join(' ')
-    pages.push(text)
+
+    // Use Y-coordinates to detect line breaks (new row = new line)
+    const items = content.items.filter((item) => item.str.trim().length > 0)
+    if (items.length === 0) continue
+
+    const lines = []
+    let currentLine = []
+    let lastY = null
+
+    for (const item of items) {
+      const y = Math.round(item.transform[5]) // Y coordinate
+      if (lastY !== null && Math.abs(y - lastY) > 3) {
+        // Y changed — new line
+        lines.push(currentLine.join(' '))
+        currentLine = []
+      }
+      currentLine.push(item.str)
+      lastY = y
+    }
+    if (currentLine.length > 0) {
+      lines.push(currentLine.join(' '))
+    }
+
+    pages.push(lines.join('\n'))
   }
 
   return pages.join('\n')
